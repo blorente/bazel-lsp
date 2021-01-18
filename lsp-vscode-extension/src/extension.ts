@@ -33,17 +33,25 @@ export function activate(context: ExtensionContext) {
 	// Options to control the language client
 	let clientOptions: LanguageClientOptions = {
 		// Register the server for plain text documents
-		documentSelector: [{ scheme: 'file', language: 'plaintext' }],
+		documentSelector: [
+			{ scheme: 'file', language: 'starlark' },
+			{ scheme: 'file', language: 'plaintext', pattern: '**/WORKSPACE' },
+			{ scheme: 'file', language: 'plaintext', pattern: '**/BUILD' },
+			{ scheme: 'file', language: 'plaintext', pattern: '**/BUILD.bazel' },
+			{ scheme: 'file', language: 'plaintext', pattern: '**/*.bzl' },
+			{ scheme: 'file', pattern: '**/tools/build_rules/prelude_bazel' },
+		],
 		synchronize: {
 			// Notify the server about file changes to '.clientrc files contained in the workspace
-			fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
+			// TODO Watch bazelrc
+			fileEvents: workspace.createFileSystemWatcher('**/WORKSPACE')
 		}
 	};
 
 	// Create the language client and start the client.
 	client = new LanguageClient(
 		'languageServerExample',
-		'Language Server Example',
+		'Bazel Language Server',
 		serverOptions,
 		clientOptions
 	);
