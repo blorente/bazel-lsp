@@ -12,6 +12,7 @@ use interpreter::{BazelWorkspaceLoader, Starlark};
 
 mod parser;
 use parser::highlight;
+use parser::extract_symbols;
 
 #[derive(Debug)]
 struct Backend {
@@ -32,6 +33,7 @@ impl Backend {
         capabilities.text_document_sync =
             Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full));
         capabilities.document_highlight_provider = Some(true);
+        capabilities.document_symbol_provider = Some(true);
         capabilities.workspace = Some(WorkspaceCapability {
             workspace_folders: Some(WorkspaceFolderCapability {
                 supported: Some(true),
@@ -90,6 +92,22 @@ impl LanguageServer for Backend {
             .await;
 
         highlight(&path).map_err(|_| Error::internal_error())
+    }
+
+    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+        let path = params
+            .text_document
+            .uri
+            .to_file_path()
+            .map_err(|_| Error::internal_error())?;
+        let resp = extract_symbols(&path)
+            .map_err(|_| Error::internal_error())?;
+        
+        match resp {
+            Some(symbols) => Ok(Some(DocumentSymbolResponse::Flat(symbols))),
+            None => Ok(None)
+        }
+        
     }
 }
 
