@@ -1,0 +1,3 @@
+load("//:one_function.bzl", "my_filegroup")
+
+my_filegroup(name="one_source_fg", srcs=["one_source.txt"])
