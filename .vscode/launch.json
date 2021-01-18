@@ -7,12 +7,9 @@
 			"request": "launch",
 			"name": "Launch Client",
 			"runtimeExecutable": "${execPath}",
-			"args": ["--extensionDevelopmentPath=${workspaceRoot}"],
-			"outFiles": ["${workspaceRoot}/out/**/*.js"],
-			"preLaunchTask": {
-				"type": "npm",
-				"script": "watch"
-			}
+			"args": ["--extensionDevelopmentPath=${workspaceRoot}/lsp-vscode-extension"],
+			"outFiles": ["${workspaceRoot}/lsp-vscode-extension/out/*.js"],
+			"preLaunchTask": "build.sh"
 		},
 	]
 }

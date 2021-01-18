@@ -20,7 +20,7 @@ export function activate(context: ExtensionContext) {
 	// let serverModule = context.asAbsolutePath(
 	// 	path.join('server', 'out', 'server.js')
 	// );
-    let serverModule = context.asAbsolutePath(path.join('..', 'experimentation', 'target', 'debug', 'experimentation'))
+    let serverModule = context.asAbsolutePath(path.join('..', 'server', 'target', 'debug', 'server'))
 	// The debug options for the server
 	// --inspect=6009: runs the server in Node's Inspector mode so VS Code can attach to the server for debugging
 	// let debugOptions = { execArgv: ['--nolazy', '--inspect=6009'] };

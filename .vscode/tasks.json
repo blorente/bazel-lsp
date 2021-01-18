@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"command": "${workspaceRoot}/build.sh",
+			"group": "build",
+			"problemMatcher": [],
+			"label": "build.sh",
+		}
+	]
+}
