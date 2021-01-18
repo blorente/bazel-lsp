@@ -1,18 +1,43 @@
-use tower_lsp::jsonrpc::Result;
+use std::sync::Mutex;
+
+use tower_lsp::jsonrpc::{Error, Result};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
+
+use starlark::stdlib::global_environment;
+use starlark::syntax::dialect::Dialect;
+
+mod interpreter;
+use interpreter::{BazelWorkspaceLoader, Starlark};
+
+mod parser;
+use parser::highlight;
 
 #[derive(Debug)]
 struct Backend {
     client: Client,
+    loader: BazelWorkspaceLoader,
 }
 
 impl Backend {
+    fn new(client: Client) -> Self {
+        Backend {
+            client,
+            loader: BazelWorkspaceLoader { workspace: None },
+        }
+    }
+
     fn capabilities() -> ServerCapabilities {
         let mut capabilities = ServerCapabilities::default();
-        capabilities.text_document_sync = Some(TextDocumentSyncCapability::Kind(
-            TextDocumentSyncKind::Incremental,
-        ));
+        capabilities.text_document_sync =
+            Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full));
+        capabilities.document_highlight_provider = Some(true);
+        capabilities.workspace = Some(WorkspaceCapability {
+            workspace_folders: Some(WorkspaceFolderCapability {
+                supported: Some(true),
+                change_notifications: None,
+            }),
+        });
         capabilities
     }
 }
@@ -47,6 +72,24 @@ impl LanguageServer for Backend {
                 format!("opened file {}", params.text_document.uri),
             )
             .await;
+        let content = params.content_changes[0].text.clone();
+    }
+
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> Result<Option<Vec<DocumentHighlight>>> {
+        let path = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_file_path()
+            .map_err(|_| Error::internal_error())?;
+        self.client
+            .log_message(MessageType::Info, format!("Highlighting file {:?}", &path))
+            .await;
+
+        highlight(&path).map_err(|_| Error::internal_error())
     }
 }
 
@@ -58,7 +101,7 @@ async fn main() -> tokio::io::Result<()> {
     let read = tokio::io::stdin();
     let write = tokio::io::stdout();
 
-    let (service, messages) = LspService::new(|client| Backend { client });
+    let (service, messages) = LspService::new(|client| Backend::new(client));
     Server::new(read, write)
         .interleave(messages)
         .serve(service)
