@@ -107,7 +107,6 @@ impl LanguageServer for Backend {
             Some(symbols) => Ok(Some(DocumentSymbolResponse::Flat(symbols))),
             None => Ok(None)
         }
-        
     }
 }
 

@@ -59,16 +59,37 @@ fn extract_symbols_from_statement(
 	let mut symbols = vec![];
 	let location = statement.location;
 	match &statement.node {
-		ast::StatementType::FunctionDef { name, .. } => symbols.push(SymbolInformation {
-			name: name.clone(),
-			kind: SymbolKind::Function,
-			deprecated: None,
-			location: Location::new(Url::from_file_path(path).expect("Something went very wrong"), loc_to_range(location, name)),
-			container_name: None,
-		}),
-		_ => {}
+		ast::StatementType::FunctionDef { name, .. } => symbols.push(symbol_information(
+			&name,
+			SymbolKind::Function,
+			path,
+			location,
+		)),
+		ast::StatementType::Expression { expression } => match &expression.node {
+			ast::ExpressionType::Call { function, .. } => symbols.push(symbol_information(function.name(), SymbolKind::Method, path, expression.location)),
+			_ => {},
+		},
+		_ => {},
 	};
 	symbols
+}
+
+fn symbol_information(
+	name: &str,
+	kind: SymbolKind,
+	path: &PathBuf,
+	location: ast::Location,
+) -> SymbolInformation {
+	SymbolInformation {
+		name: name.to_string(),
+		kind: SymbolKind::Function,
+		deprecated: None,
+		location: Location::new(
+			Url::from_file_path(path).expect("Something went very wrong"),
+			loc_to_range(location, name),
+		),
+		container_name: None,
+	}
 }
 
 fn loc_to_range(location: ast::Location, name: &str) -> lsp_types::Range {
