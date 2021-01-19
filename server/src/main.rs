@@ -82,12 +82,12 @@ impl LanguageServer for Backend {
             .await;
         
         let path = params
-            .text_document_position_params
             .text_document
             .uri
             .to_file_path()
-            .map_err(|_| Error::internal_error())?;
+            .map_err(|_| Error::internal_error()).expect("bad path");
         self.documents.refresh_doc(&path);
+        self.client.log_message(MessageType::Info, format!("index is now {:#?}", self.documents)).await;
     }
 
     async fn document_highlight(
@@ -123,7 +123,7 @@ impl LanguageServer for Backend {
     }
 
     async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
-
+        Ok(None)
     }
 }
 
