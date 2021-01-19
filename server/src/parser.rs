@@ -7,7 +7,7 @@ use tower_lsp::lsp_types::{
 	DocumentHighlight, DocumentHighlightKind, Location, SymbolInformation, SymbolKind, Url,
 };
 
-fn parse(file: &PathBuf) -> Result<ast::Program, ()> {
+pub fn parse(file: &PathBuf) -> Result<ast::Program, ()> {
 	let content: String = read_to_string(file).map_err(|_| ())?;
 	parser::parse_program(&content).map_err(|_| ())
 }

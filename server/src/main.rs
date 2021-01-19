@@ -14,10 +14,14 @@ mod parser;
 use parser::highlight;
 use parser::extract_symbols;
 
+mod index;
+use index::Documents;
+
 #[derive(Debug)]
 struct Backend {
     client: Client,
     loader: BazelWorkspaceLoader,
+    documents: Documents,
 }
 
 impl Backend {
@@ -25,6 +29,7 @@ impl Backend {
         Backend {
             client,
             loader: BazelWorkspaceLoader { workspace: None },
+            documents: Documents::default(),
         }
     }
 
@@ -34,6 +39,7 @@ impl Backend {
             Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full));
         capabilities.document_highlight_provider = Some(true);
         capabilities.document_symbol_provider = Some(true);
+        capabilities.definition_provider = Some(true);
         capabilities.workspace = Some(WorkspaceCapability {
             workspace_folders: Some(WorkspaceFolderCapability {
                 supported: Some(true),
@@ -74,7 +80,14 @@ impl LanguageServer for Backend {
                 format!("opened file {}", params.text_document.uri),
             )
             .await;
-        let content = params.content_changes[0].text.clone();
+        
+        let path = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_file_path()
+            .map_err(|_| Error::internal_error())?;
+        self.documents.refresh_doc(&path);
     }
 
     async fn document_highlight(
@@ -107,6 +120,10 @@ impl LanguageServer for Backend {
             Some(symbols) => Ok(Some(DocumentSymbolResponse::Flat(symbols))),
             None => Ok(None)
         }
+    }
+
+    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+
     }
 }
 
