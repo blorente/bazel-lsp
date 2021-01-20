@@ -123,7 +123,19 @@ impl LanguageServer for Backend {
     }
 
     async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+        let path = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_file_path()
+            .map_err(|_| Error::internal_error())?;
+        let position = params.text_document_position_params.position;
+        let maybe_call = self.documents.get_doc(&path).map(|index| index.call_at(&position));
+        self.client.log_message(MessageType::Info, format!("Goto Call {:#?}", &maybe_call));
+        // TODO Goto calls defined in the same file
+        // Ok(maybe_call.map(|call| GotoDefinitionResponse::Scalar(location: Location { uri: Url, range: Range::new(0, 0)}))
         Ok(None)
+        
     }
 }
 

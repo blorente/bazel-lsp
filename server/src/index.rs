@@ -5,14 +5,14 @@ use std::sync::Mutex;
 
 use crate::parser::parse;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CallableSymbolSource {
 	Stdlib,
 	DeclaredInFile(Location),
 	Loaded(String, PathBuf),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CallableSymbol {
 	imported_name: String,
 	real_name: String,
@@ -29,9 +29,24 @@ impl CallableSymbol {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct Range {
+	start: Location,
+	end: Location,
+}
+
+impl Range {
+	pub fn contains_position(&self, position: &tower_lsp::lsp_types::Position) -> bool {
+		self.start.row() <= position.line as usize &&
+		self.start.column() <= position.character as usize &&
+		self.end.row() >= position.line as usize &&
+		self.end.column() >= position.character as usize
+	}
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionCall {
-	range: (Location, Location),
+	range:  Range,
 	function_name: String,
 }
 
@@ -42,9 +57,13 @@ impl FunctionCall {
 			location.column() + name.len(),
 		);
 		FunctionCall {
-			range: (location, end_location),
+			range: Range { start: location, end: end_location },
 			function_name: name.clone(),
 		}
+	}
+
+	fn contains_position(&self, position: &tower_lsp::lsp_types::Position) -> bool {
+		self.range.contains_position(position)
 	}
 }
 
@@ -59,9 +78,16 @@ impl Documents {
 		let index_for_doc =	DocumentIndex::index_document(doc).expect("");
 		index.insert(doc.clone(), index_for_doc);
 	}
+
+	pub fn get_doc(&self, doc: &PathBuf) -> Option<DocumentIndex> {
+		let docs = &*self.docs.lock().expect("Failed to lock");
+		// TODO This clone could get very expensive, we should wrap indexes in Arcs
+		docs.get(doc).map(|index| index.clone())
+	}
+
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct DocumentIndex {
 	declarations: Vec<CallableSymbol>,
 	calls: Vec<FunctionCall>,
@@ -97,5 +123,10 @@ impl DocumentIndex {
 		let mut index = DocumentIndex::default();
 		process_suite(&mut index, &ast.statements);
 		Ok(index)
+	}
+
+	// TODO This should probably live in a new struct to represent all calls
+	pub fn call_at(&self, position: &tower_lsp::lsp_types::Position) -> Option<FunctionCall> {
+		self.calls.iter().find(|call| call.contains_position(position)).map(|call| call.clone())
 	}
 }
