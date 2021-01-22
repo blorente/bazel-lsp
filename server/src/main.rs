@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tower_lsp::jsonrpc::{Error, Result};
@@ -11,8 +12,8 @@ mod interpreter;
 use interpreter::{BazelWorkspaceLoader, Starlark};
 
 mod parser;
-use parser::highlight;
 use parser::extract_symbols;
+use parser::highlight;
 
 mod index;
 use index::Documents;
@@ -37,8 +38,8 @@ impl Backend {
         let mut capabilities = ServerCapabilities::default();
         capabilities.text_document_sync =
             Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full));
-        capabilities.document_highlight_provider = Some(true);
-        capabilities.document_symbol_provider = Some(true);
+        // capabilities.document_highlight_provider = Some(true);
+        // capabilities.document_symbol_provider = Some(true);
         capabilities.definition_provider = Some(true);
         capabilities.workspace = Some(WorkspaceCapability {
             workspace_folders: Some(WorkspaceFolderCapability {
@@ -47,6 +48,20 @@ impl Backend {
             }),
         });
         capabilities
+    }
+
+    async fn update_doc(&self, doc: &PathBuf) {
+        self.client
+            .log_message(MessageType::Info, format!("opened file {:?}", doc))
+            .await;
+
+        self.documents.refresh_doc(doc);
+        self.client
+            .log_message(
+                MessageType::Info,
+                format!("index is now {:#?}", self.documents),
+            )
+            .await;
     }
 }
 
@@ -74,68 +89,90 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        self.client
-            .log_message(
-                MessageType::Info,
-                format!("opened file {}", params.text_document.uri),
-            )
-            .await;
-        
         let path = params
             .text_document
             .uri
             .to_file_path()
-            .map_err(|_| Error::internal_error()).expect("bad path");
-        self.documents.refresh_doc(&path);
-        self.client.log_message(MessageType::Info, format!("index is now {:#?}", self.documents)).await;
+            .map_err(|_| Error::internal_error())
+            .expect("bad path");
+        self.update_doc(&path).await;
     }
 
-    async fn document_highlight(
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let path = params
+            .text_document
+            .uri
+            .to_file_path()
+            .map_err(|_| Error::internal_error())
+            .expect("bad path");
+        self.update_doc(&path).await;
+    }
+
+    // async fn document_highlight(
+    //     &self,
+    //     params: DocumentHighlightParams,
+    // ) -> Result<Option<Vec<DocumentHighlight>>> {
+    //     let path = params
+    //         .text_document_position_params
+    //         .text_document
+    //         .uri
+    //         .to_file_path()
+    //         .map_err(|_| Error::internal_error())?;
+    //     self.client
+    //         .log_message(MessageType::Info, format!("Highlighting file {:?}", &path))
+    //         .await;
+
+    //     highlight(&path).map_err(|_| Error::internal_error())
+    // }
+
+    // async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+    //     let path = params
+    //         .text_document
+    //         .uri
+    //         .to_file_path()
+    //         .map_err(|_| Error::internal_error())?;
+    //     let resp = extract_symbols(&path)
+    //         .map_err(|_| Error::internal_error())?;
+    //     match resp {
+    //         Some(symbols) => Ok(Some(DocumentSymbolResponse::Flat(symbols))),
+    //         None => Ok(None)
+    //     }
+    // }
+
+    async fn goto_definition(
         &self,
-        params: DocumentHighlightParams,
-    ) -> Result<Option<Vec<DocumentHighlight>>> {
-        let path = params
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params
             .text_document_position_params
             .text_document
-            .uri
-            .to_file_path()
-            .map_err(|_| Error::internal_error())?;
-        self.client
-            .log_message(MessageType::Info, format!("Highlighting file {:?}", &path))
-            .await;
-
-        highlight(&path).map_err(|_| Error::internal_error())
-    }
-
-    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
-        let path = params
-            .text_document
-            .uri
-            .to_file_path()
-            .map_err(|_| Error::internal_error())?;
-        let resp = extract_symbols(&path)
-            .map_err(|_| Error::internal_error())?;
-        
-        match resp {
-            Some(symbols) => Ok(Some(DocumentSymbolResponse::Flat(symbols))),
-            None => Ok(None)
-        }
-    }
-
-    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
-        let path = params
-            .text_document_position_params
-            .text_document
-            .uri
+            .uri;
+        let path = uri
             .to_file_path()
             .map_err(|_| Error::internal_error())?;
         let position = params.text_document_position_params.position;
-        let maybe_call = self.documents.get_doc(&path).map(|index| index.call_at(&position));
-        self.client.log_message(MessageType::Info, format!("Goto Call {:#?}", &maybe_call));
+        let index = self.documents.get_doc(&path).expect("Index missing");
+        let maybe_declaration = index
+            .call_at(&position);
+
+        self.client
+            .log_message(
+                MessageType::Info,
+                format!("Got call {:#?}", &maybe_declaration),
+            )
+            .await;
+        let maybe_declaration = maybe_declaration
+            .and_then(|call| index.declaration_of(&call));
+        self.client
+            .log_message(
+                MessageType::Info,
+                format!("Goto Declaration {:#?}", &maybe_declaration),
+            )
+            .await;
         // TODO Goto calls defined in the same file
-        // Ok(maybe_call.map(|call| GotoDefinitionResponse::Scalar(location: Location { uri: Url, range: Range::new(0, 0)}))
-        Ok(None)
-        
+        Ok(maybe_declaration.map(|decl| {
+            GotoDefinitionResponse::Scalar(decl.lsp_location(&uri))
+        }))
     }
 }
 
