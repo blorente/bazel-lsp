@@ -48,6 +48,7 @@ pub struct Range {
 
 // TODO Lsp positions are 0-based, parser positions are 1-based.
 // For convenience, we should ditch this data structure and store things in lsp types.
+// The magic +4s are to skip the "def" keyword.
 impl Range {
 	pub fn from_identifier(name: &String, location: Location) -> Self {
 		let end_location = Location::new(location.row(), location.column() + name.len());
@@ -59,8 +60,8 @@ impl Range {
 
 	pub fn as_lsp_range(&self) -> LspRange {
 		LspRange::new(
-			LspPosition::new(self.start.row() as u64 - 1, self.start.column() as u64 - 1),
-			LspPosition::new(self.end.row() as u64 - 1, self.end.column() as u64 - 1),
+			LspPosition::new(self.start.row() as u64 - 1, self.start.column() as u64 - 1 + 4),
+			LspPosition::new(self.end.row() as u64 - 1, self.end.column() as u64 - 1 + 4),
 		)
 	}
 
