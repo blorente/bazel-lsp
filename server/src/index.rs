@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::fs::read_to_string;
+use tower_lsp::lsp_types as lsp;
 use tower_lsp::lsp_types::Location as LspLocation;
 use tower_lsp::lsp_types::Position as LspPosition;
 use tower_lsp::lsp_types::Range as LspRange;
@@ -21,22 +22,24 @@ pub enum CallableSymbolSource {
 }
 
 #[derive(Debug, Clone)]
-pub struct CallableSymbol {
+pub struct FunctionDecl {
 	imported_name: String,
 	real_name: String,
 	source: CallableSymbolSource,
 }
 
-impl CallableSymbol {
+impl FunctionDecl {
 	fn declared_in_file(name: &String, location: ast::Location) -> Self {
-		CallableSymbol {
+		// We account for the "def " keyword here, which the parser doesn't pick up on.
+		let location = ast::Location::new(location.row(), location.column() + "def ".len());
+		FunctionDecl {
 			imported_name: name.clone(),
 			real_name: name.clone(),
 			source: CallableSymbolSource::DeclaredInFile(Range::from_identifier(name, location)),
 		}
 	}
 
-	pub fn lsp_location(&self, current_file: &tower_lsp::lsp_types::Url) -> LspLocation {
+	pub fn lsp_location(&self, current_file: &tower_lsp::lsp_types::Url) -> lsp::Location {
 		let range = match &self.source {
 			CallableSymbolSource::DeclaredInFile(range) => range.as_lsp_range(),
 			_ => panic!("Unimplemented"),
@@ -47,34 +50,27 @@ impl CallableSymbol {
 
 #[derive(Debug, Clone)]
 pub struct Range {
-	start: ast::Location,
-	end: ast::Location,
+	start: lsp::Position,
+	end: lsp::Position,
 }
 
-// TODO Lsp positions are 0-based, parser positions are 1-based.
-// For convenience, we should ditch this data structure and store things in lsp types.
-// The magic +4s are to skip the "def" keyword.
 impl Range {
 	pub fn from_identifier(name: &String, location: ast::Location) -> Self {
-		let end_location = ast::Location::new(location.row(), location.column() + name.len());
-		Range {
-			start: location,
-			end: end_location,
-		}
+		// Lsp positions are 0-based, whereas parser positions are 1-based,
+		let start = lsp::Position::new(location.row() as u64 - 1, location.column() as u64 - 1);
+		let end = lsp::Position::new(start.line, start.character + name.len() as u64);
+		Range {	start, end }
 	}
 
 	pub fn as_lsp_range(&self) -> LspRange {
 		LspRange::new(
-			LspPosition::new(self.start.row() as u64 - 1, self.start.column() as u64 - 1 + 4),
-			LspPosition::new(self.end.row() as u64 - 1, self.end.column() as u64 - 1 + 4),
+			self.start.clone(),
+			self.end.clone(),
 		)
 	}
 
-	pub fn contains_position(&self, position: &tower_lsp::lsp_types::Position) -> bool {
-		self.start.row() - 1 <= position.line as usize
-			&& self.start.column() - 1 <= position.character as usize
-			&& self.end.row() - 1 >= position.line as usize
-			&& self.end.column() - 1 >= position.character as usize
+	pub fn contains_position(&self, position: lsp::Position) -> bool {
+		self.start <= position && self.end >= position
 	}
 }
 
@@ -92,7 +88,7 @@ impl FunctionCall {
 		}
 	}
 
-	fn contains_position(&self, position: &tower_lsp::lsp_types::Position) -> bool {
+	fn contains_position(&self, position: lsp::Position) -> bool {
 		self.range.contains_position(position)
 	}
 }
@@ -112,13 +108,13 @@ impl Documents {
 	pub fn get_doc(&self, doc: &PathBuf) -> Option<DocumentIndex> {
 		let docs = &*self.docs.lock().expect("Failed to lock");
 		// TODO This clone could get very expensive, we should wrap indexes in Arcs
-		docs.get(doc).map(|index| index.clone())
+		docs.get(doc).cloned()
 	}
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct DocumentIndex {
-	declarations: HashMap<String, CallableSymbol>,
+	declarations: HashMap<String, FunctionDecl>,
 	calls: Vec<FunctionCall>,
 }
 
@@ -128,7 +124,7 @@ fn process_statement(index: &mut DocumentIndex, statement: &ast::Statement) {
 		ast::StatementType::FunctionDef { name, body, .. } => {
 			index.declarations.insert(
 				name.clone(),
-				CallableSymbol::declared_in_file(name, location),
+				FunctionDecl::declared_in_file(name, location),
 			);
 			process_suite(index, body);
 		}
@@ -160,14 +156,14 @@ impl DocumentIndex {
 	}
 
 	// TODO This should probably live in a new struct to represent all calls
-	pub fn call_at(&self, position: &tower_lsp::lsp_types::Position) -> Option<FunctionCall> {
+	pub fn call_at(&self, position: lsp::Position) -> Option<FunctionCall> {
 		self.calls
 			.iter()
 			.find(|call| call.contains_position(position))
 			.cloned()
 	}
 
-	pub fn declaration_of(&self, call: &FunctionCall) -> Option<CallableSymbol> {
+	pub fn declaration_of(&self, call: &FunctionCall) -> Option<FunctionDecl> {
 		self.declarations.get(&call.function_name).cloned()
 	}
 }

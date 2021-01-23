@@ -34,8 +34,6 @@ impl Backend {
         let mut capabilities = ServerCapabilities::default();
         capabilities.text_document_sync =
             Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::Full));
-        // capabilities.document_highlight_provider = Some(true);
-        // capabilities.document_symbol_provider = Some(true);
         capabilities.definition_provider = Some(true);
         capabilities.workspace = Some(WorkspaceCapability {
             workspace_folders: Some(WorkspaceFolderCapability {
@@ -48,13 +46,13 @@ impl Backend {
 
     async fn update_doc(&self, doc: &PathBuf) {
         self.client
-            .log_message(MessageType::Info, format!("opened file {:?}", doc))
+            .log_message(MessageType::Log, format!("opened file {:?}", doc))
             .await;
 
         self.documents.refresh_doc(doc);
         self.client
             .log_message(
-                MessageType::Info,
+                MessageType::Log,
                 format!("index is now {:#?}", self.documents),
             )
             .await;
@@ -118,11 +116,11 @@ impl LanguageServer for Backend {
         let position = params.text_document_position_params.position;
         let index = self.documents.get_doc(&path).expect("Index missing");
         let maybe_declaration = index
-            .call_at(&position);
+            .call_at(position);
 
         self.client
             .log_message(
-                MessageType::Info,
+                MessageType::Log,
                 format!("Got call {:#?}", &maybe_declaration),
             )
             .await;
@@ -130,7 +128,7 @@ impl LanguageServer for Backend {
             .and_then(|call| index.declaration_of(&call));
         self.client
             .log_message(
-                MessageType::Info,
+                MessageType::Log,
                 format!("Goto Declaration {:#?}", &maybe_declaration),
             )
             .await;
