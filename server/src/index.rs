@@ -5,9 +5,6 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::fs::read_to_string;
 use tower_lsp::lsp_types as lsp;
-use tower_lsp::lsp_types::Location as LspLocation;
-use tower_lsp::lsp_types::Position as LspPosition;
-use tower_lsp::lsp_types::Range as LspRange;
 
 pub fn parse(file: &PathBuf) -> Result<ast::Program, ()> {
        let content: String = read_to_string(file).map_err(|_| ())?;
@@ -44,8 +41,13 @@ impl FunctionDecl {
 			CallableSymbolSource::DeclaredInFile(range) => range.as_lsp_range(),
 			_ => panic!("Unimplemented"),
 		};
-		LspLocation::new(current_file.clone(), range)
+		lsp::Location::new(current_file.clone(), range)
 	}
+}
+
+fn ast_location_to_lsp_position(location: ast::Location) -> lsp::Position {
+	// Lsp positions are 0-based, whereas parser positions are 1-based,
+	lsp::Position::new(location.row() as u64 - 1, location.column() as u64 - 1)
 }
 
 #[derive(Debug, Clone)]
@@ -56,14 +58,13 @@ pub struct Range {
 
 impl Range {
 	pub fn from_identifier(name: &String, location: ast::Location) -> Self {
-		// Lsp positions are 0-based, whereas parser positions are 1-based,
-		let start = lsp::Position::new(location.row() as u64 - 1, location.column() as u64 - 1);
+		let start =	ast_location_to_lsp_position(location);
 		let end = lsp::Position::new(start.line, start.character + name.len() as u64);
 		Range {	start, end }
 	}
 
-	pub fn as_lsp_range(&self) -> LspRange {
-		LspRange::new(
+	pub fn as_lsp_range(&self) -> lsp::Range {
+		lsp::Range::new(
 			self.start.clone(),
 			self.end.clone(),
 		)

@@ -1,15 +1,8 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use tower_lsp::jsonrpc::{Error, Result};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
-
-use starlark::stdlib::global_environment;
-use starlark::syntax::dialect::Dialect;
-
-mod interpreter;
-use interpreter::{BazelWorkspaceLoader, Starlark};
 
 mod index;
 use index::Documents;
@@ -17,7 +10,6 @@ use index::Documents;
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    loader: BazelWorkspaceLoader,
     documents: Documents,
 }
 
@@ -25,7 +17,6 @@ impl Backend {
     fn new(client: Client) -> Self {
         Backend {
             client,
-            loader: BazelWorkspaceLoader { workspace: None },
             documents: Documents::default(),
         }
     }
@@ -132,7 +123,6 @@ impl LanguageServer for Backend {
                 format!("Goto Declaration {:#?}", &maybe_declaration),
             )
             .await;
-        // TODO Goto calls defined in the same file
         Ok(maybe_declaration.map(|decl| {
             GotoDefinitionResponse::Scalar(decl.lsp_location(&uri))
         }))
@@ -141,9 +131,6 @@ impl LanguageServer for Backend {
 
 #[tokio::main]
 async fn main() -> tokio::io::Result<()> {
-    // let mut listener = tokio::net::TcpListener::bind("127.0.0.1:9274").await?;
-    // let (stream, _) = listener.accept().await?;
-    // let (read, write) = tokio::io::split(stream);
     let read = tokio::io::stdin();
     let write = tokio::io::stdout();
 
