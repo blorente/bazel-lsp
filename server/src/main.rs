@@ -11,10 +11,6 @@ use starlark::syntax::dialect::Dialect;
 mod interpreter;
 use interpreter::{BazelWorkspaceLoader, Starlark};
 
-mod parser;
-use parser::extract_symbols;
-use parser::highlight;
-
 mod index;
 use index::Documents;
 
@@ -107,37 +103,6 @@ impl LanguageServer for Backend {
             .expect("bad path");
         self.update_doc(&path).await;
     }
-
-    // async fn document_highlight(
-    //     &self,
-    //     params: DocumentHighlightParams,
-    // ) -> Result<Option<Vec<DocumentHighlight>>> {
-    //     let path = params
-    //         .text_document_position_params
-    //         .text_document
-    //         .uri
-    //         .to_file_path()
-    //         .map_err(|_| Error::internal_error())?;
-    //     self.client
-    //         .log_message(MessageType::Info, format!("Highlighting file {:?}", &path))
-    //         .await;
-
-    //     highlight(&path).map_err(|_| Error::internal_error())
-    // }
-
-    // async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
-    //     let path = params
-    //         .text_document
-    //         .uri
-    //         .to_file_path()
-    //         .map_err(|_| Error::internal_error())?;
-    //     let resp = extract_symbols(&path)
-    //         .map_err(|_| Error::internal_error())?;
-    //     match resp {
-    //         Some(symbols) => Ok(Some(DocumentSymbolResponse::Flat(symbols))),
-    //         None => Ok(None)
-    //     }
-    // }
 
     async fn goto_definition(
         &self,

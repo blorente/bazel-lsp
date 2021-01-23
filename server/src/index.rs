@@ -1,12 +1,17 @@
-use rustpython_parser::ast::*;
+use rustpython_parser::ast;
+use rustpython_parser::parser;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::fs::read_to_string;
 use tower_lsp::lsp_types::Location as LspLocation;
 use tower_lsp::lsp_types::Position as LspPosition;
 use tower_lsp::lsp_types::Range as LspRange;
 
-use crate::parser::parse;
+pub fn parse(file: &PathBuf) -> Result<ast::Program, ()> {
+       let content: String = read_to_string(file).map_err(|_| ())?;
+       parser::parse_program(&content).map_err(|_| ())
+}
 
 #[derive(Debug, Clone)]
 pub enum CallableSymbolSource {
@@ -23,7 +28,7 @@ pub struct CallableSymbol {
 }
 
 impl CallableSymbol {
-	fn declared_in_file(name: &String, location: Location) -> Self {
+	fn declared_in_file(name: &String, location: ast::Location) -> Self {
 		CallableSymbol {
 			imported_name: name.clone(),
 			real_name: name.clone(),
@@ -42,16 +47,16 @@ impl CallableSymbol {
 
 #[derive(Debug, Clone)]
 pub struct Range {
-	start: Location,
-	end: Location,
+	start: ast::Location,
+	end: ast::Location,
 }
 
 // TODO Lsp positions are 0-based, parser positions are 1-based.
 // For convenience, we should ditch this data structure and store things in lsp types.
 // The magic +4s are to skip the "def" keyword.
 impl Range {
-	pub fn from_identifier(name: &String, location: Location) -> Self {
-		let end_location = Location::new(location.row(), location.column() + name.len());
+	pub fn from_identifier(name: &String, location: ast::Location) -> Self {
+		let end_location = ast::Location::new(location.row(), location.column() + name.len());
 		Range {
 			start: location,
 			end: end_location,
@@ -80,7 +85,7 @@ pub struct FunctionCall {
 }
 
 impl FunctionCall {
-	fn from_identifier(name: &String, location: Location) -> Self {
+	fn from_identifier(name: &String, location: ast::Location) -> Self {
 		FunctionCall {
 			range: Range::from_identifier(name, location),
 			function_name: name.clone(),
@@ -117,19 +122,19 @@ pub struct DocumentIndex {
 	calls: Vec<FunctionCall>,
 }
 
-fn process_statement(index: &mut DocumentIndex, statement: &Statement) {
+fn process_statement(index: &mut DocumentIndex, statement: &ast::Statement) {
 	let location = statement.location;
 	match &statement.node {
-		StatementType::FunctionDef { name, body, .. } => {
+		ast::StatementType::FunctionDef { name, body, .. } => {
 			index.declarations.insert(
 				name.clone(),
 				CallableSymbol::declared_in_file(name, location),
 			);
 			process_suite(index, body);
 		}
-		StatementType::Expression { expression } => match &expression.node {
-			ExpressionType::Call { function, .. } => match &function.node {
-				ExpressionType::Identifier { name, .. } => index
+		ast::StatementType::Expression { expression } => match &expression.node {
+			ast::ExpressionType::Call { function, .. } => match &function.node {
+				ast::ExpressionType::Identifier { name, .. } => index
 					.calls
 					.push(FunctionCall::from_identifier(name, function.location)),
 				_ => {}
@@ -140,7 +145,7 @@ fn process_statement(index: &mut DocumentIndex, statement: &Statement) {
 	};
 }
 
-fn process_suite(index: &mut DocumentIndex, suite: &Suite) {
+fn process_suite(index: &mut DocumentIndex, suite: &ast::Suite) {
 	for stmt in suite {
 		process_statement(index, &stmt);
 	}
