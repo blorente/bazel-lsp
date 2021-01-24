@@ -111,7 +111,7 @@ impl LanguageServer for Backend {
 
         self.client
             .log_message(
-                MessageType::Log,
+                MessageType::Info,
                 format!("Got call {:#?}", &maybe_declaration),
             )
             .await;
@@ -119,7 +119,7 @@ impl LanguageServer for Backend {
             .and_then(|call| index.declaration_of(&call));
         self.client
             .log_message(
-                MessageType::Log,
+                MessageType::Info,
                 format!("Goto Declaration {:#?}", &maybe_declaration),
             )
             .await;

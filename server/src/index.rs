@@ -1,21 +1,21 @@
 use rustpython_parser::ast;
 use rustpython_parser::parser;
 use std::collections::HashMap;
+use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::fs::read_to_string;
 use tower_lsp::lsp_types as lsp;
 
 pub fn parse(file: &PathBuf) -> Result<ast::Program, ()> {
-       let content: String = read_to_string(file).map_err(|_| ())?;
-       parser::parse_program(&content).map_err(|_| ())
+	let content: String = read_to_string(file).map_err(|_| ())?;
+	parser::parse_program(&content).map_err(|_| ())
 }
 
 #[derive(Debug, Clone)]
 pub enum CallableSymbolSource {
 	Stdlib,
 	DeclaredInFile(Range),
-	Loaded(String, PathBuf),
+	Loaded(String),
 }
 
 #[derive(Debug, Clone)]
@@ -36,12 +36,38 @@ impl FunctionDecl {
 		}
 	}
 
+	fn loaded(name: &String, imported_name: &String, source: &String) -> Self {
+		FunctionDecl {
+			imported_name: imported_name.clone(),
+			real_name: name.clone(),
+			source: CallableSymbolSource::Loaded(source.clone()),
+		}
+	}
+
 	pub fn lsp_location(&self, current_file: &tower_lsp::lsp_types::Url) -> lsp::Location {
-		let range = match &self.source {
-			CallableSymbolSource::DeclaredInFile(range) => range.as_lsp_range(),
+		match &self.source {
+			CallableSymbolSource::DeclaredInFile(range) => {
+				lsp::Location::new(current_file.clone(), range.as_lsp_range())
+			}
+			CallableSymbolSource::Loaded(source) if source.starts_with("//:") => {
+				let hacky_hacky_workspace_base = std::env::current_dir()
+					.expect("Error getting current dir.")
+					.as_os_str()
+					.to_str()
+					.expect("Error converting current dir to string")
+					.to_owned() + "/" + &source[3..source.len()];
+				let full_path = PathBuf::from(&hacky_hacky_workspace_base);
+				let zero_zero = lsp::Position::new(0, 0);
+				lsp::Location::new(
+					lsp::Url::from_file_path(&full_path).expect(&format!(
+						"Failed to convert path {:?} to URL. Base string was {}",
+						&full_path, &hacky_hacky_workspace_base
+					)),
+					lsp::Range::new(zero_zero, zero_zero),
+				)
+			}
 			_ => panic!("Unimplemented"),
-		};
-		lsp::Location::new(current_file.clone(), range)
+		}
 	}
 }
 
@@ -58,16 +84,13 @@ pub struct Range {
 
 impl Range {
 	pub fn from_identifier(name: &String, location: ast::Location) -> Self {
-		let start =	ast_location_to_lsp_position(location);
+		let start = ast_location_to_lsp_position(location);
 		let end = lsp::Position::new(start.line, start.character + name.len() as u64);
-		Range {	start, end }
+		Range { start, end }
 	}
 
 	pub fn as_lsp_range(&self) -> lsp::Range {
-		lsp::Range::new(
-			self.start.clone(),
-			self.end.clone(),
-		)
+		lsp::Range::new(self.start.clone(), self.end.clone())
 	}
 
 	pub fn contains_position(&self, position: lsp::Position) -> bool {
@@ -123,17 +146,23 @@ fn process_statement(index: &mut DocumentIndex, statement: &ast::Statement) {
 	let location = statement.location;
 	match &statement.node {
 		ast::StatementType::FunctionDef { name, body, .. } => {
-			index.declarations.insert(
-				name.clone(),
-				FunctionDecl::declared_in_file(name, location),
-			);
+			index
+				.declarations
+				.insert(name.clone(), FunctionDecl::declared_in_file(name, location));
 			process_suite(index, body);
 		}
 		ast::StatementType::Expression { expression } => match &expression.node {
-			ast::ExpressionType::Call { function, .. } => match &function.node {
-				ast::ExpressionType::Identifier { name, .. } => index
-					.calls
-					.push(FunctionCall::from_identifier(name, function.location)),
+			ast::ExpressionType::Call {
+				function,
+				args,
+				keywords,
+			} => match &function.node {
+				ast::ExpressionType::Identifier { name, .. } => match name {
+					name if name == "load" => process_load(index, &args, &keywords),
+					_ => index
+						.calls
+						.push(FunctionCall::from_identifier(name, function.location)),
+				},
 				_ => {}
 			},
 			_ => {}
@@ -145,6 +174,40 @@ fn process_statement(index: &mut DocumentIndex, statement: &ast::Statement) {
 fn process_suite(index: &mut DocumentIndex, suite: &ast::Suite) {
 	for stmt in suite {
 		process_statement(index, &stmt);
+	}
+}
+
+fn process_string_literal(expr: &ast::Expression) -> String {
+	if let ast::ExpressionType::String { value } = &expr.node {
+		if let ast::StringGroup::Constant { value } = value {
+			value.clone()
+		} else {
+			panic!("Loaded symbol with non-constant {:?}", expr)
+		}
+	} else {
+		panic!("Couldn't understand loaded symbol {:?}", expr)
+	}
+}
+
+fn process_load(
+	index: &mut DocumentIndex,
+	args: &Vec<ast::Expression>,
+	kwargs: &Vec<ast::Keyword>,
+) {
+	let source = process_string_literal(&args[0]);
+	for arg in &args[1..args.len()] {
+		let name = process_string_literal(&arg);
+		index
+			.declarations
+			.insert(name.clone(), FunctionDecl::loaded(&name, &name, &source));
+	}
+	for kwarg in kwargs {
+		let imported_name = kwarg.name.as_ref().expect("Kwarg without a name").clone();
+		let real_name = process_string_literal(&kwarg.value);
+		index.declarations.insert(
+			imported_name.clone(),
+			FunctionDecl::loaded(&real_name, &imported_name, &source),
+		);
 	}
 }
 
