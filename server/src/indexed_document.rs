@@ -29,7 +29,7 @@ impl IndexedDocument {
 			.cloned()
 	}
 
-	pub fn declaration_of(&self, call: &FunctionCall) -> Option<FunctionDecl> {
-		self.declarations.get(&call.function_name).cloned()
+	pub fn declaration_of(&self, name: &String) -> Option<FunctionDecl> {
+		self.declarations.get(name).cloned()
 	}
 }

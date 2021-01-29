@@ -111,26 +111,15 @@ impl LanguageServer for Backend {
             .to_file_path()
             .map_err(|_| Error::internal_error())?;
         let position = params.text_document_position_params.position;
-        let index = self.documents.get_doc(&path).expect("Index missing");
-        let maybe_declaration = index
-            .call_at(position);
-
+        let maybe_location = self.documents.locate_declaration_of_call_at(&path, position);
         self.client
             .log_message(
                 MessageType::Info,
-                format!("Got call {:#?}", &maybe_declaration),
+                format!("Goto Location {:#?}", &maybe_location),
             )
             .await;
-        let maybe_declaration = maybe_declaration
-            .and_then(|call| index.declaration_of(&call));
-        self.client
-            .log_message(
-                MessageType::Info,
-                format!("Goto Declaration {:#?}", &maybe_declaration),
-            )
-            .await;
-        Ok(maybe_declaration.map(|decl| {
-            GotoDefinitionResponse::Scalar(decl.lsp_location(&uri))
+        Ok(maybe_location.map(|loc| {
+            GotoDefinitionResponse::Scalar(loc)
         }))
     }
 }
