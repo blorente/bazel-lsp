@@ -13,15 +13,15 @@ After trying many frameworks, I've settled on:
 ## Current Features
 
 - [X] Goto definition in functions declared in the same file.
-- [ ] Goto definition to files loaded from the workspace.
+- [X] Goto definition to files loaded from the workspace.
 - [ ] Goto definition to files loaded from a different workspace.
 - [ ] Autocomplete.
 - [ ] Goto definition of symbols that are not functions.
 
 ### Fine-grained todo
 
-- [ ] Parse loaded files at parse time
-- [ ] Model loaded symbols as links to declarations instead of declarations with links. Then put the link-following logic in the document map.
+- [X] Parse loaded files at parse time
+- [X] Model loaded symbols as links to declarations instead of declarations with links. Then put the link-following logic in the document map.
 - [ ] Run `bazel sync` with custom output base on workspace refreshes.
 - [ ] Run `bazel sync` on changes to `WORKSPACE`.
 - [ ] Proper error handling, no more expects.
