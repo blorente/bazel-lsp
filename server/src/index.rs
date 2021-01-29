@@ -16,7 +16,7 @@ pub fn parse(file: &PathBuf) -> Result<ast::Program, ()> {
 pub enum CallableSymbolSource {
 	Stdlib,
 	DeclaredInFile(Range),
-	Loaded(String),
+	Loaded(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +24,21 @@ pub struct FunctionDecl {
 	imported_name: String,
 	real_name: String,
 	source: CallableSymbolSource,
+}
+
+fn resolve_bazel_path(path: &String) -> PathBuf {
+	if path.starts_with("//:") {
+		let resolved_path = std::env::current_dir()
+					.expect("Error getting current dir.")
+					.as_os_str()
+					.to_str()
+					.expect("Error converting current dir to string")
+					.to_owned() + "/" + path.strip_prefix("//:").unwrap();
+		
+		PathBuf::from(resolved_path)
+	} else {
+		panic!("Path {} didn't start with //:", path);
+	}
 }
 
 impl FunctionDecl {
@@ -41,7 +56,7 @@ impl FunctionDecl {
 		FunctionDecl {
 			imported_name: imported_name.clone(),
 			real_name: name.clone(),
-			source: CallableSymbolSource::Loaded(source.clone()),
+			source: CallableSymbolSource::Loaded(resolve_bazel_path(source)),
 		}
 	}
 
@@ -50,19 +65,12 @@ impl FunctionDecl {
 			CallableSymbolSource::DeclaredInFile(range) => {
 				lsp::Location::new(current_file.clone(), range.as_lsp_range())
 			}
-			CallableSymbolSource::Loaded(source) if source.starts_with("//:") => {
-				let hacky_hacky_workspace_base = std::env::current_dir()
-					.expect("Error getting current dir.")
-					.as_os_str()
-					.to_str()
-					.expect("Error converting current dir to string")
-					.to_owned() + "/" + &source[3..source.len()];
-				let full_path = PathBuf::from(&hacky_hacky_workspace_base);
+			CallableSymbolSource::Loaded(source) => {
 				let zero_zero = lsp::Position::new(0, 0);
 				lsp::Location::new(
-					lsp::Url::from_file_path(&full_path).expect(&format!(
-						"Failed to convert path {:?} to URL. Base string was {}",
-						&full_path, &hacky_hacky_workspace_base
+					lsp::Url::from_file_path(&source).expect(&format!(
+						"Failed to convert path {:?} to URL",
+						&source,
 					)),
 					lsp::Range::new(zero_zero, zero_zero),
 				)
