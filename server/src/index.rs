@@ -3,6 +3,7 @@ use rustpython_parser::parser;
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 use tower_lsp::lsp_types as lsp;
 
@@ -119,7 +120,7 @@ impl FunctionCall {
 
 #[derive(Default, Debug)]
 pub struct Documents {
-	docs: Mutex<HashMap<PathBuf, IndexedDocument>>,
+	docs: Mutex<HashMap<PathBuf, Arc<IndexedDocument>>>,
 }
 
 impl Documents {
@@ -127,7 +128,7 @@ impl Documents {
 		self.index_document(doc).expect("Trouble refreshing doc");
 	}
 
-	pub fn get_doc(&self, doc: &PathBuf) -> Option<IndexedDocument> {
+	pub fn get_doc(&self, doc: &PathBuf) -> Option<Arc<IndexedDocument>> {
 		let docs = &*self.docs.lock().expect("Failed to lock");
 		// TODO This clone could get very expensive, we should wrap indexes in Arcs
 		docs.get(doc).cloned()
@@ -146,11 +147,11 @@ fn process_suite(index: &mut IndexedDocument, suite: &ast::Suite) {
 	}
 }
 
-fn process_document(documents: &mut HashMap<PathBuf, IndexedDocument>, path: &PathBuf) -> Result<(), ()> {
+fn process_document(documents: &mut HashMap<PathBuf, Arc<IndexedDocument>>, path: &PathBuf) -> Result<(), ()> {
 	let ast = parse(path)?;
 	let mut index = IndexedDocument::new(path);
 	process_suite(&mut index, &ast.statements);
-	documents.insert(path.clone(), index);
+	documents.insert(path.clone(), Arc::new(index));
 	Ok(())
 }
 
