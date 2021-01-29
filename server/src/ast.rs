@@ -2,7 +2,6 @@ use rustpython_parser::ast;
 use rustpython_parser::parser;
 use std::fs::read_to_string;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::collections::HashMap;
 
 use crate::indexed_document::IndexedDocument;
@@ -14,12 +13,11 @@ pub fn parse(file: &PathBuf) -> Result<ast::Program, String> {
 	parser::parse_program(&content).map_err(|err| format!("Error parsing program: {:?}", err))
 }
 
-pub fn process_document(documents: &mut HashMap<PathBuf, Arc<IndexedDocument>>, path: &PathBuf) -> Result<(), String> {
+pub fn process_document(path: &PathBuf) -> Result<(IndexedDocument, Vec<PathBuf>), String> {
 	let ast = parse(path)?;
-	let mut index = IndexedDocument::new(path);
-	process_suite(&mut index, &ast.statements)?;
-	documents.insert(path.clone(), Arc::new(index));
-	Ok(())
+	let mut indexed_document = IndexedDocument::new(path);
+	let docs_to_load = process_suite(&mut indexed_document, &ast.statements)?;
+	Ok((indexed_document, docs_to_load))
 }
 
 fn process_suite(index: &mut IndexedDocument, suite: &ast::Suite) -> Result<Vec<PathBuf>, String> {
@@ -80,23 +78,47 @@ fn process_string_literal(expr: &ast::Expression) -> String {
 	}
 }
 
+
+fn resolve_bazel_path(path: &String) -> Result<PathBuf, String> {
+	if path.starts_with("//:") {
+		let resolved_path = std::env::current_dir()
+					.expect("Error getting current dir.")
+					.as_os_str()
+					.to_str()
+					.expect("Error converting current dir to string")
+					.to_owned() + "/" + path.strip_prefix("//:").unwrap();
+		
+		Ok(PathBuf::from(resolved_path))
+	} else {
+		Err(format!("Path {} didn't start with //:", path))
+	}
+}
 fn process_load(
 	args: &Vec<ast::Expression>,
 	kwargs: &Vec<ast::Keyword>,
 ) -> Result<(HashMap<String, FunctionDecl>, Vec<PathBuf>), String> {
-	let mut declarations = HashMap::new();
 	let source = process_string_literal(&args[0]);
-	for arg in &args[1..args.len()] {
-		let name = process_string_literal(&arg);
-		declarations.insert(name.clone(), FunctionDecl::loaded(&name, &name, &source));
+	let maybe_source_as_path = resolve_bazel_path(&source);
+	if let Ok(source_as_path) = maybe_source_as_path {
+		let mut declarations = HashMap::new();
+		for arg in &args[1..args.len()] {
+			let name = process_string_literal(&arg);
+			declarations.insert(name.clone(), FunctionDecl::loaded(&name, &name, &source_as_path));
+		}
+		for kwarg in kwargs {
+			let imported_name = kwarg.name.as_ref().cloned().ok_or_else(|| "Kwarg without a name")?;
+			let real_name = process_string_literal(&kwarg.value);
+			declarations.insert(
+				imported_name.clone(),
+				FunctionDecl::loaded(&real_name, &imported_name, &source_as_path),
+			);
+		}
+		Ok((declarations, vec![source_as_path]))
+	} else {
+		// For now, we don't want to error when we find a file we cannot load.
+		// However, given that we're not going to be able to goto definiton,
+		// no sense in returning any declarations.
+		Ok((HashMap::new(), vec![]))
 	}
-	for kwarg in kwargs {
-		let imported_name = kwarg.name.as_ref().cloned().ok_or_else(|| "Kwarg without a name")?;
-		let real_name = process_string_literal(&kwarg.value);
-		declarations.insert(
-			imported_name.clone(),
-			FunctionDecl::loaded(&real_name, &imported_name, &source),
-		);
-	}
-	Ok((declarations, vec![]))
+
 }

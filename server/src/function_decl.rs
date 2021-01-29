@@ -18,21 +18,6 @@ pub struct FunctionDecl {
 	source: CallableSymbolSource,
 }
 
-fn resolve_bazel_path(path: &String) -> PathBuf {
-	if path.starts_with("//:") {
-		let resolved_path = std::env::current_dir()
-					.expect("Error getting current dir.")
-					.as_os_str()
-					.to_str()
-					.expect("Error converting current dir to string")
-					.to_owned() + "/" + path.strip_prefix("//:").unwrap();
-		
-		PathBuf::from(resolved_path)
-	} else {
-		panic!("Path {} didn't start with //:", path);
-	}
-}
-
 impl FunctionDecl {
 	pub fn declared_in_file(name: &String, location: ast::Location) -> Self {
 		// We account for the "def " keyword here, which the parser doesn't pick up on.
@@ -44,11 +29,11 @@ impl FunctionDecl {
 		}
 	}
 
-	pub fn loaded(name: &String, imported_name: &String, source: &String) -> Self {
+	pub fn loaded(name: &String, imported_name: &String, source: &PathBuf) -> Self {
 		FunctionDecl {
 			imported_name: imported_name.clone(),
 			real_name: name.clone(),
-			source: CallableSymbolSource::Loaded(resolve_bazel_path(source)),
+			source: CallableSymbolSource::Loaded(source.clone()),
 		}
 	}
 
