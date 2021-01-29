@@ -119,30 +119,43 @@ impl FunctionCall {
 
 #[derive(Default, Debug)]
 pub struct Documents {
-	docs: Mutex<HashMap<PathBuf, DocumentIndex>>,
+	docs: Mutex<HashMap<PathBuf, IndexedDocument>>,
 }
 
 impl Documents {
 	pub fn refresh_doc(&self, doc: &PathBuf) {
-		let index = &mut *self.docs.lock().expect("");
-		let index_for_doc = DocumentIndex::index_document(doc).expect("");
-		index.insert(doc.clone(), index_for_doc);
+		self.index_document(doc).expect("Trouble refreshing doc");
 	}
 
-	pub fn get_doc(&self, doc: &PathBuf) -> Option<DocumentIndex> {
+	pub fn get_doc(&self, doc: &PathBuf) -> Option<IndexedDocument> {
 		let docs = &*self.docs.lock().expect("Failed to lock");
 		// TODO This clone could get very expensive, we should wrap indexes in Arcs
 		docs.get(doc).cloned()
 	}
+
+	pub fn index_document(&self, path: &PathBuf) -> Result<(), ()> {
+		let index = &mut *self.docs.lock().map_err(|_| ())?;
+		process_document(index, path)?;
+		Ok(())
+	}
+
+}
+fn process_suite(index: &mut IndexedDocument, suite: &ast::Suite) {
+	for stmt in suite {
+		process_statement(index, &stmt);
+	}
 }
 
-#[derive(Default, Debug, Clone)]
-pub struct DocumentIndex {
-	declarations: HashMap<String, FunctionDecl>,
-	calls: Vec<FunctionCall>,
+fn process_document(documents: &mut HashMap<PathBuf, IndexedDocument>, path: &PathBuf) -> Result<(), ()> {
+	let ast = parse(path)?;
+	let mut index = IndexedDocument::new(path);
+	process_suite(&mut index, &ast.statements);
+	documents.insert(path.clone(), index);
+	Ok(())
 }
 
-fn process_statement(index: &mut DocumentIndex, statement: &ast::Statement) {
+
+fn process_statement(index: &mut IndexedDocument, statement: &ast::Statement) {
 	let location = statement.location;
 	match &statement.node {
 		ast::StatementType::FunctionDef { name, body, .. } => {
@@ -171,12 +184,6 @@ fn process_statement(index: &mut DocumentIndex, statement: &ast::Statement) {
 	};
 }
 
-fn process_suite(index: &mut DocumentIndex, suite: &ast::Suite) {
-	for stmt in suite {
-		process_statement(index, &stmt);
-	}
-}
-
 fn process_string_literal(expr: &ast::Expression) -> String {
 	if let ast::ExpressionType::String { value } = &expr.node {
 		if let ast::StringGroup::Constant { value } = value {
@@ -190,7 +197,7 @@ fn process_string_literal(expr: &ast::Expression) -> String {
 }
 
 fn process_load(
-	index: &mut DocumentIndex,
+	index: &mut IndexedDocument,
 	args: &Vec<ast::Expression>,
 	kwargs: &Vec<ast::Keyword>,
 ) {
@@ -211,12 +218,20 @@ fn process_load(
 	}
 }
 
-impl DocumentIndex {
-	pub fn index_document(path: &PathBuf) -> Result<Self, ()> {
-		let ast = parse(path)?;
-		let mut index = DocumentIndex::default();
-		process_suite(&mut index, &ast.statements);
-		Ok(index)
+#[derive(Default, Debug, Clone)]
+pub struct IndexedDocument {
+	declarations: HashMap<String, FunctionDecl>,
+	calls: Vec<FunctionCall>,
+	path: PathBuf,
+}
+
+impl IndexedDocument {
+	fn new(path: &PathBuf) -> Self {
+		IndexedDocument {
+			path: path.clone(),
+			declarations: HashMap::default(),
+			calls: Vec::default(),
+		}
 	}
 
 	// TODO This should probably live in a new struct to represent all calls
