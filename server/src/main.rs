@@ -4,8 +4,14 @@ use tower_lsp::jsonrpc::{Error, Result};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-mod index;
-use index::Documents;
+mod documents;
+use documents::Documents;
+
+mod ast;
+mod function_decl;
+mod function_call;
+mod indexed_document;
+mod range;
 
 #[derive(Debug)]
 struct Backend {
