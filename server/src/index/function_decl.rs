@@ -19,7 +19,6 @@ pub struct FunctionDecl {
 impl FunctionDecl {
 	pub fn declared_in_file(name: &String, location: ast::Location) -> Self {
 		// We account for the "def " keyword here, which the parser doesn't pick up on.
-		let location = ast::Location::new(location.row(), location.column() + "def ".len());
 		FunctionDecl {
 			imported_name: name.clone(),
 			real_name: name.clone(),

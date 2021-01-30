@@ -17,7 +17,7 @@ After trying many frameworks, I've settled on:
 - [X] Goto definition to files loaded from a different workspace.
 - [ ] Support loading local references ("//:") that happen in external deps.
 - [ ] Autocomplete.
-- [ ] Goto definition of symbols that are not functions.
+- [X] Goto definition of symbols that are not functions. TODO Note that we will override outer symbols with inner symbols that have hte same identifier. We should only consider the root scope.
 
 ### Fine-grained todo
 

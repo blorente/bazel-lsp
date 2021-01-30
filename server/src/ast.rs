@@ -35,11 +35,23 @@ fn process_statement(index: &mut IndexedDocument, statement: &ast::Statement, ba
 	let location = statement.location;
 	match &statement.node {
 		ast::StatementType::FunctionDef { name, body, .. } => {
+			let location_with_def = ast::Location::new(location.row(), location.column() + "def ".len());
 			index
 				.declarations
-				.insert(name.clone(), FunctionDecl::declared_in_file(name, location));
+				.insert(name.clone(), FunctionDecl::declared_in_file(name, location_with_def));
 			Ok(process_suite(index, body, bazel)?)
-		}
+		},
+		ast::StatementType::Assign { targets, .. } => {
+			for target in targets {
+				match &target.node {
+					ast::ExpressionType::Identifier {name, ..} => {
+						index.declarations.insert(name.clone(), FunctionDecl::declared_in_file(name, target.location));
+					},
+					_ => {},
+				};
+			}
+			Ok(vec![])
+		},
 		ast::StatementType::Expression { expression } => match &expression.node {
 			ast::ExpressionType::Call {
 				function,
