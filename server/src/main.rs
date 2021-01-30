@@ -8,17 +8,24 @@ mod ast;
 mod index;
 use index::Documents;
 
+mod bazel;
+use bazel::Bazel;
+
 #[derive(Debug)]
 struct Backend {
     client: Client,
     documents: Documents,
+    bazel: Bazel,
 }
 
 impl Backend {
     fn new(client: Client) -> Self {
+        let bazel = Bazel::new(PathBuf::from("/tmp/bazel"));
+        bazel.update_workspace(&PathBuf::from("/home/blorente/github/blorente/bazel-lsp/test-bazel-workspaces")).expect("");
         Backend {
             client,
             documents: Documents::default(),
+            bazel,
         }
     }
 
