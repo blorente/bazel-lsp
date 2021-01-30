@@ -7,37 +7,38 @@ use std::collections::HashMap;
 use crate::index::indexed_document::IndexedDocument;
 use crate::index::function_decl::FunctionDecl;
 use crate::index::function_call::FunctionCall;
+use crate::bazel::Bazel;
 
 pub fn parse(file: &PathBuf) -> Result<ast::Program, String> {
 	let content: String = read_to_string(file).map_err(|err| format!("Error reading file to string: {:?}", err))?;
 	parser::parse_program(&content).map_err(|err| format!("Error parsing program: {:?}", err))
 }
 
-pub fn process_document(path: &PathBuf) -> Result<(IndexedDocument, Vec<PathBuf>), String> {
+pub fn process_document(path: &PathBuf, bazel: &Bazel) -> Result<(IndexedDocument, Vec<PathBuf>), String> {
 	let ast = parse(path)?;
 	let mut indexed_document = IndexedDocument::new(path);
-	let docs_to_load = process_suite(&mut indexed_document, &ast.statements)?;
+	let docs_to_load = process_suite(&mut indexed_document, &ast.statements, bazel)?;
 	Ok((indexed_document, docs_to_load))
 }
 
-fn process_suite(index: &mut IndexedDocument, suite: &ast::Suite) -> Result<Vec<PathBuf>, String> {
+fn process_suite(index: &mut IndexedDocument, suite: &ast::Suite, bazel: &Bazel) -> Result<Vec<PathBuf>, String> {
 	let mut documents_left_to_parse = vec![];
 	for stmt in suite.iter() {
-		let docs_to_parse_in_stmt = process_statement(index, stmt)?;
+		let docs_to_parse_in_stmt = process_statement(index, stmt, bazel)?;
 		documents_left_to_parse.extend(docs_to_parse_in_stmt);
 	}
 	Ok(documents_left_to_parse)
 }
 
 
-fn process_statement(index: &mut IndexedDocument, statement: &ast::Statement) -> Result<Vec<PathBuf>, String> {
+fn process_statement(index: &mut IndexedDocument, statement: &ast::Statement, bazel: &Bazel) -> Result<Vec<PathBuf>, String> {
 	let location = statement.location;
 	match &statement.node {
 		ast::StatementType::FunctionDef { name, body, .. } => {
 			index
 				.declarations
 				.insert(name.clone(), FunctionDecl::declared_in_file(name, location));
-			Ok(process_suite(index, body)?)
+			Ok(process_suite(index, body, bazel)?)
 		}
 		ast::StatementType::Expression { expression } => match &expression.node {
 			ast::ExpressionType::Call {
@@ -47,7 +48,7 @@ fn process_statement(index: &mut IndexedDocument, statement: &ast::Statement) ->
 			} => match &function.node {
 				ast::ExpressionType::Identifier { name, .. } => match name {
 					name if name == "load" => {
-						let (loaded_declarations, files_to_load) = process_load(&args, &keywords)?;
+						let (loaded_declarations, files_to_load) = process_load(&args, &keywords, bazel)?;
 						index.declarations.extend(loaded_declarations);
 						Ok(files_to_load)
 					}
@@ -78,27 +79,13 @@ fn process_string_literal(expr: &ast::Expression) -> String {
 	}
 }
 
-
-fn resolve_bazel_path(path: &String) -> Result<PathBuf, String> {
-	if path.starts_with("//:") {
-		let resolved_path = std::env::current_dir()
-					.expect("Error getting current dir.")
-					.as_os_str()
-					.to_str()
-					.expect("Error converting current dir to string")
-					.to_owned() + "/" + path.strip_prefix("//:").unwrap();
-		
-		Ok(PathBuf::from(resolved_path))
-	} else {
-		Err(format!("Path {} didn't start with //:", path))
-	}
-}
 fn process_load(
 	args: &Vec<ast::Expression>,
 	kwargs: &Vec<ast::Keyword>,
+	bazel: &Bazel,
 ) -> Result<(HashMap<String, FunctionDecl>, Vec<PathBuf>), String> {
 	let source = process_string_literal(&args[0]);
-	let maybe_source_as_path = resolve_bazel_path(&source);
+	let maybe_source_as_path = bazel.resolve_bazel_path(&source);
 	if let Ok(source_as_path) = maybe_source_as_path {
 		let mut declarations = HashMap::new();
 		for arg in &args[1..args.len()] {

@@ -5,7 +5,6 @@ use crate::index::range::Range;
 
 #[derive(Debug, Clone)]
 pub enum CallableSymbolSource {
-	Stdlib,
 	DeclaredInFile(Range),
 	Loaded(PathBuf),
 }

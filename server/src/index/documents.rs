@@ -8,6 +8,7 @@ use tower_lsp::lsp_types as lsp;
 
 use crate::index::indexed_document::IndexedDocument;
 use crate::index::function_decl::{FunctionDecl, CallableSymbolSource};
+use crate::bazel::Bazel;
 
 #[derive(Default, Debug)]
 pub struct Documents {
@@ -17,8 +18,8 @@ pub struct Documents {
 }
 
 impl Documents {
-	pub fn refresh_doc(&self, doc: &PathBuf) {
-		self.index_document(doc).expect("Trouble refreshing doc");
+	pub fn refresh_doc(&self, doc: &PathBuf, bazel: &Bazel) {
+		self.index_document(doc, bazel).expect("Trouble refreshing doc");
 	}
 
 	pub fn get_doc(&self, doc: &PathBuf) -> Option<Arc<IndexedDocument>> {
@@ -26,19 +27,20 @@ impl Documents {
 		docs.get(doc).cloned()
 	}
 
-	pub fn index_document(&self, path: &PathBuf) -> Result<(), String> {
+	fn index_document(&self, path: &PathBuf, bazel: &Bazel) -> Result<(), String> {
 		let index = &mut *self
 			.docs
 			.write()
 			.map_err(|err| format!("Failed to lock documents: {:?}", err))?;
-		Documents::index_document_inner(index, path)
+		Documents::index_document_inner(index, path, bazel)
 	}
 
 	fn index_document_inner(
 		index: &mut HashMap<PathBuf, Arc<IndexedDocument>>,
 		path: &PathBuf,
+		bazel: &Bazel,
 	) -> Result<(), String> {
-		let (indexed_doc, docs_to_load) = process_document(path)?;
+		let (indexed_doc, docs_to_load) = process_document(path, bazel)?;
 		index.insert(path.clone(), Arc::new(indexed_doc));
 		for doc in docs_to_load {
 			// We unconditionally update the current document,
@@ -46,7 +48,7 @@ impl Documents {
 			//
 			// If they had, we'd have updated them on did_change.
 			if !index.contains_key(&doc) {
-				Documents::index_document_inner(index, &doc)?;
+				Documents::index_document_inner(index, &doc, bazel)?;
 			}
 		}
 		Ok(())
@@ -88,7 +90,6 @@ impl Documents {
 					.unwrap();
 				self.locate_declaration(&new_declaration, &loaded_path)
 			}
-			CallableSymbolSource::Stdlib => unimplemented!(),
 		}
 	}
 }

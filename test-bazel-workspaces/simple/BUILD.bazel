@@ -1,3 +1,5 @@
 load("//:one_function.bzl", "my_filegroup")
+load("@rules_java//java:defs.bzl", "java_library")
 
 my_filegroup(name="one_source_fg", srcs=["one_source.txt"])
+java_library(name="javalib", srcs=[])

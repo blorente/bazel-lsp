@@ -20,8 +20,8 @@ struct Backend {
 
 impl Backend {
     fn new(client: Client) -> Self {
-        let bazel = Bazel::new(PathBuf::from("/tmp/bazel"));
-        bazel.update_workspace(&PathBuf::from("/home/blorente/github/blorente/bazel-lsp/test-bazel-workspaces")).expect("");
+        let mut bazel = Bazel::new();
+        bazel.update_workspace(&PathBuf::from("/home/blorente/github/blorente/bazel-lsp/test-bazel-workspaces/simple")).expect("");
         Backend {
             client,
             documents: Documents::default(),
@@ -48,7 +48,7 @@ impl Backend {
             .log_message(MessageType::Log, format!("opened file {:?}", doc))
             .await;
 
-        self.documents.refresh_doc(doc);
+        self.documents.refresh_doc(doc, &self.bazel);
         self.client
             .log_message(
                 MessageType::Log,
