@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tower_lsp::lsp_types as lsp;
 
-use crate::function_decl::FunctionDecl;
-use crate::function_call::FunctionCall;
+use crate::index::function_decl::FunctionDecl;
+use crate::index::function_call::FunctionCall;
 
 #[derive(Default, Debug, Clone)]
 pub struct IndexedDocument {

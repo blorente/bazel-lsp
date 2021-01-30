@@ -4,9 +4,9 @@ use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::collections::HashMap;
 
-use crate::indexed_document::IndexedDocument;
-use crate::function_decl::FunctionDecl;
-use crate::function_call::FunctionCall;
+use crate::index::indexed_document::IndexedDocument;
+use crate::index::function_decl::FunctionDecl;
+use crate::index::function_call::FunctionCall;
 
 pub fn parse(file: &PathBuf) -> Result<ast::Program, String> {
 	let content: String = read_to_string(file).map_err(|err| format!("Error reading file to string: {:?}", err))?;

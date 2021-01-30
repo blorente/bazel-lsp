@@ -4,9 +4,10 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use crate::ast::process_document;
-use crate::function_decl::{CallableSymbolSource, FunctionDecl};
-use crate::indexed_document::IndexedDocument;
 use tower_lsp::lsp_types as lsp;
+
+use crate::index::indexed_document::IndexedDocument;
+use crate::index::function_decl::{FunctionDecl, CallableSymbolSource};
 
 #[derive(Default, Debug)]
 pub struct Documents {
@@ -40,7 +41,13 @@ impl Documents {
 		let (indexed_doc, docs_to_load) = process_document(path)?;
 		index.insert(path.clone(), Arc::new(indexed_doc));
 		for doc in docs_to_load {
-			Documents::index_document_inner(index, &doc)?;
+			// We unconditionally update the current document,
+			// but not any other one, because they haven't changed.
+			//
+			// If they had, we'd have updated them on did_change.
+			if !index.contains_key(&doc) {
+				Documents::index_document_inner(index, &doc)?;
+			}
 		}
 		Ok(())
 	}

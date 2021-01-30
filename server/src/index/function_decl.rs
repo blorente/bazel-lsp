@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use rustpython_parser::ast;
 
-use crate::range::Range;
+use crate::index::range::Range;
 
 #[derive(Debug, Clone)]
 pub enum CallableSymbolSource {
