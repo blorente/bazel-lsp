@@ -19,7 +19,7 @@ pub struct Documents {
 
 impl Documents {
 	pub fn refresh_doc(&self, doc: &PathBuf, bazel: &Bazel) {
-		self.index_document(doc, bazel).expect("Trouble refreshing doc");
+		self.index_document(doc, bazel).expect(&format!("Trouble refreshing doc {:?}", doc));
 	}
 
 	pub fn get_doc(&self, doc: &PathBuf) -> Option<Arc<IndexedDocument>> {

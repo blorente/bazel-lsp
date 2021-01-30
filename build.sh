@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 # Compile server
 (cd server && cargo build)
 

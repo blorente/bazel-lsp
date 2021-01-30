@@ -10,8 +10,8 @@ use crate::index::function_call::FunctionCall;
 use crate::bazel::Bazel;
 
 pub fn parse(file: &PathBuf) -> Result<ast::Program, String> {
-	let content: String = read_to_string(file).map_err(|err| format!("Error reading file to string: {:?}", err))?;
-	parser::parse_program(&content).map_err(|err| format!("Error parsing program: {:?}", err))
+	let content: String = read_to_string(file).map_err(|err| format!("Error reading file {:?} to string: {:?}", &file, err))?;
+	parser::parse_program(&content).map_err(|err| format!("Error parsing file {:?}: {:?}", &file, err))
 }
 
 pub fn process_document(path: &PathBuf, bazel: &Bazel) -> Result<(IndexedDocument, Vec<PathBuf>), String> {

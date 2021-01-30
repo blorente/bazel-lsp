@@ -1,15 +1,43 @@
 use std::path::PathBuf;
 
+use std::sync::{Arc, Mutex};
+
 #[derive(Debug)]
 pub struct Bazel {
-	exec_root: Option<PathBuf>,
+	inner: Arc<Mutex<InnerBazel>>,
 }
 
 impl Bazel {
+	pub fn new() -> Self { Bazel { inner: Arc::new(Mutex::new(InnerBazel::new()))}}
+
+	pub fn update_exec_root(&self, workspace: &PathBuf) -> Result<(), String> {
+		let inner = &mut *self.inner.lock().map_err(|err| format!("Error locking Bazel {:?}", err))?;
+		inner.update_exec_root(workspace)
+	}
+	pub fn update_workspace(&self, workspace: &PathBuf) -> Result<(), String> {
+		let inner = &mut *self.inner.lock().map_err(|err| format!("Error locking Bazel {:?}", err))?;
+		inner.update_workspace(workspace)
+	}
+	pub fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String> {
+		let inner = &*self.inner.lock().map_err(|err| format!("Error locking Bazel {:?}", err))?;
+		inner.resolve_bazel_path(path)
+	}
+}
+
+#[derive(Debug)]
+struct InnerBazel {
+	exec_root: Option<PathBuf>,
+}
+
+impl InnerBazel {
 	pub fn new() -> Self {
-		Bazel {
+		InnerBazel {
 			exec_root: None,
 		}
+	}
+
+	pub fn update_exec_root(&mut self, workspace: &PathBuf) -> Result<(), String> {
+		self.get_exec_root(workspace).map(|root| {self.exec_root = Some(root); ()})
 	}
 
 	pub fn update_workspace(&mut self, workspace: &PathBuf) -> Result<(), String> {
@@ -19,7 +47,7 @@ impl Bazel {
 			],
 			workspace,
 		)?;
-		self.get_exec_root(workspace).map(|root| {self.exec_root = Some(root); ()})
+		self.update_exec_root(workspace)
 	}
 
 	fn get_exec_root(&self, source_root: &PathBuf) -> Result<PathBuf, String> {
@@ -31,7 +59,7 @@ impl Bazel {
 	}
 
 	fn call_bazel(&self, command: Vec<String>, cwd: &PathBuf) -> Result<String, String> {
-		std::process::Command::new("bazel")
+		std::process::Command::new("bazelisk")
 			.args(&command)
 			.current_dir(cwd)
 			.output()
@@ -40,6 +68,7 @@ impl Bazel {
 				String::from_utf8(out.stdout)
 					.map_err(|err| format!("Error parsing output: {:?}", err))
 			})
+			.map(|out| out.trim().to_string())
 	}
 
 	pub fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String> {
@@ -53,7 +82,7 @@ impl Bazel {
 
 			Ok(PathBuf::from(resolved_path))
 		} else {
-			let resolved_path = path.replace("@", "").replace("//", "").replace(":", "/");
+			let resolved_path = path.trim().replace("@", "").replace("//", "/").replace(":", "/");
 			self
 				.exec_root
 				.as_ref()

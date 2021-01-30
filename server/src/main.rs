@@ -20,12 +20,10 @@ struct Backend {
 
 impl Backend {
     fn new(client: Client) -> Self {
-        let mut bazel = Bazel::new();
-        bazel.update_workspace(&PathBuf::from("/home/blorente/github/blorente/bazel-lsp/test-bazel-workspaces/simple")).expect("");
         Backend {
             client,
             documents: Documents::default(),
-            bazel,
+            bazel: Bazel::new(),
         }
     }
 
@@ -60,10 +58,15 @@ impl Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         self.client
             .log_message(MessageType::Info, "initialized!")
             .await;
+        let path = params
+                    .root_uri
+                    .ok_or_else(|| Error::internal_error())
+                    .and_then(|url| url.to_file_path().map_err(|_| Error::internal_error()))
+                    .and_then(|path| self.bazel.update_workspace(&path).map_err(|_| Error::internal_error()));
         Ok(InitializeResult {
             capabilities: Backend::capabilities(),
             server_info: None,
