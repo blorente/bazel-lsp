@@ -1,5 +1,11 @@
 load("//:one_function.bzl", "my_filegroup")
 load("@rules_java//java:defs.bzl", "java_library")
+load("@rules_rust//rust:rust.bzl", "rust_library")
+
+rust_library(
+    name = "rustlib",
+    srcs = [],
+)
 
 my_filegroup(name="one_source_fg", srcs=["one_source.txt"])
 java_library(name="javalib", srcs=[])

@@ -6,9 +6,9 @@ use std::sync::RwLock;
 use crate::ast::process_document;
 use tower_lsp::lsp_types as lsp;
 
-use crate::index::indexed_document::IndexedDocument;
-use crate::index::function_decl::{FunctionDecl, CallableSymbolSource};
 use crate::bazel::Bazel;
+use crate::index::function_decl::{CallableSymbolSource, FunctionDecl};
+use crate::index::indexed_document::IndexedDocument;
 
 #[derive(Default, Debug)]
 pub struct Documents {
@@ -19,7 +19,8 @@ pub struct Documents {
 
 impl Documents {
 	pub fn refresh_doc(&self, doc: &PathBuf, bazel: &Bazel) {
-		self.index_document(doc, bazel).expect(&format!("Trouble refreshing doc {:?}", doc));
+		self.index_document(doc, bazel)
+			.expect(&format!("Trouble refreshing doc {:?}", doc));
 	}
 
 	pub fn get_doc(&self, doc: &PathBuf) -> Option<Arc<IndexedDocument>> {
@@ -48,7 +49,9 @@ impl Documents {
 			//
 			// If they had, we'd have updated them on did_change.
 			if !index.contains_key(&doc) {
-				Documents::index_document_inner(index, &doc, bazel)?;
+				// Documents::index_document_inner(index, &doc, bazel)?;
+				let (indexed_doc, _) = process_document(&doc, bazel)?;
+				index.insert(doc.clone(), Arc::new(indexed_doc));
 			}
 		}
 		Ok(())
@@ -64,7 +67,7 @@ impl Documents {
 			let maybe_call = indexed_doc.call_at(position);
 			if let Some(call) = maybe_call {
 				if let Some(decl) = indexed_doc.declaration_of(&call.function_name) {
-					Some(self.locate_declaration(&decl, doc))
+					self.locate_declaration(&decl, doc)
 				} else {
 					None
 				}
@@ -76,19 +79,22 @@ impl Documents {
 		}
 	}
 
-	fn locate_declaration(&self, start: &FunctionDecl, current_file: &PathBuf) -> lsp::Location {
+	fn locate_declaration(
+		&self,
+		start: &FunctionDecl,
+		current_file: &PathBuf,
+	) -> Option<lsp::Location> {
 		match &start.source {
-			CallableSymbolSource::DeclaredInFile(range) => lsp::Location::new(
+			CallableSymbolSource::DeclaredInFile(range) => Some(lsp::Location::new(
 				lsp::Url::from_file_path(current_file.clone()).expect("Err!"),
 				range.as_lsp_range(),
-			),
+			)),
 			CallableSymbolSource::Loaded(loaded_path) => {
 				let new_declaration = self
 					.get_doc(&loaded_path)
 					.expect("Error")
-					.declaration_of(&start.real_name)
-					.unwrap();
-				self.locate_declaration(&new_declaration, &loaded_path)
+					.declaration_of(&start.real_name);
+				new_declaration.and_then(|decl| self.locate_declaration(&decl, &loaded_path))
 			}
 		}
 	}

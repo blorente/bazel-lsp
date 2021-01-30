@@ -14,7 +14,8 @@ After trying many frameworks, I've settled on:
 
 - [X] Goto definition in functions declared in the same file.
 - [X] Goto definition to files loaded from the workspace.
-- [ ] Goto definition to files loaded from a different workspace.
+- [X] Goto definition to files loaded from a different workspace.
+- [ ] Support loading local references ("//:") that happen in external deps.
 - [ ] Autocomplete.
 - [ ] Goto definition of symbols that are not functions.
 
