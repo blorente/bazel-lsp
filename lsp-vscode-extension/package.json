@@ -62,5 +62,38 @@
 		"typescript": "^4.0.2",
 		"@types/vscode": "^1.52.0",
 		"vscode-test": "^1.3.0"
+	},
+	"contributes": {
+		"grammars": [
+			{
+				"language": "starlark",
+				"scopeName": "source.starlark",
+				"path": "./syntaxes/starlark.tmLanguage.json"
+			}
+		],
+		"languages": [
+			{
+				"id": "starlark",
+				"aliases": [
+					"Starlark",
+					"starlark",
+					"Bazel"
+				],
+				"extensions": [
+					".BUILD",
+					".WORKSPACE",
+					".bzl",
+					".sky",
+					".star"
+				],
+				"filenames": [
+					"BUILD",
+					"BUILD.bazel",
+					"WORKSPACE",
+					"WORKSPACE.bazel"
+				],
+				"configuration": "./syntaxes/starlark.configuration.json"
+			}
+		]
 	}
 }
