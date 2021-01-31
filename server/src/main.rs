@@ -54,6 +54,15 @@ impl Backend {
             )
             .await;
     }
+
+    async fn update_bazel(&self, file: &PathBuf) {
+        let res = self.bazel.maybe_change_source_root(&file);
+        if let Err(msg) = res {
+            self.client.log_message(MessageType::Error, msg).await;
+        } else {
+            self.client.log_message(MessageType::Info, format!("Bazel is now {:#?}", &self.bazel)).await;
+        }
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -62,11 +71,11 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::Info, "initialized!")
             .await;
-        let path = params
-                    .root_uri
-                    .ok_or_else(|| Error::internal_error())
-                    .and_then(|url| url.to_file_path().map_err(|_| Error::internal_error()))
-                    .and_then(|path| self.bazel.update_workspace(&path).map_err(|_| Error::internal_error()));
+        params
+            .root_uri
+            .ok_or_else(|| Error::internal_error())
+            .and_then(|url| url.to_file_path().map_err(|_| Error::internal_error()))
+            .and_then(|path| self.bazel.update_workspace(&path).map_err(|_| Error::internal_error()))?;
         Ok(InitializeResult {
             capabilities: Backend::capabilities(),
             server_info: None,
@@ -101,6 +110,7 @@ impl LanguageServer for Backend {
             .to_file_path()
             .map_err(|_| Error::internal_error())
             .expect("bad path");
+        self.update_bazel(&path).await;
         self.update_doc(&path).await;
     }
 
@@ -123,6 +133,9 @@ impl LanguageServer for Backend {
                 format!("Goto Location {:#?}", &maybe_location),
             )
             .await;
+        if let Some(loc) = &maybe_location {
+            self.update_bazel(&loc.uri.to_file_path().expect("")).await;
+        }
         Ok(maybe_location.map(|loc| {
             GotoDefinitionResponse::Scalar(loc)
         }))

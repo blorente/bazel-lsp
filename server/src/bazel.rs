@@ -14,12 +14,12 @@ impl Bazel {
 		}
 	}
 
-	pub fn update_exec_root(&self, workspace: &PathBuf) -> Result<(), String> {
+	pub fn maybe_change_source_root(&self, new_root: &PathBuf) -> Result<(), String> {
 		let inner = &mut *self
 			.inner
 			.lock()
 			.map_err(|err| format!("Error locking Bazel {:?}", err))?;
-		inner.update_exec_root(workspace)
+		inner.maybe_change_source_root(new_root)
 	}
 	pub fn update_workspace(&self, workspace: &PathBuf) -> Result<(), String> {
 		let inner = &mut *self
@@ -40,28 +40,50 @@ impl Bazel {
 #[derive(Debug)]
 struct InnerBazel {
 	exec_root: Option<PathBuf>,
-	source_root: Option<PathBuf>,
+	workspace_root: Option<PathBuf>,
+	source_root: Option<PathBuf>, // Where to resolve "//:" references against
 }
 
 impl InnerBazel {
 	pub fn new() -> Self {
 		InnerBazel {
 			exec_root: None,
+			workspace_root: None,
 			source_root: None,
 		}
 	}
 
-	pub fn update_exec_root(&mut self, workspace: &PathBuf) -> Result<(), String> {
-		self.get_exec_root(workspace).map(|root| {
-			self.source_root = Some(workspace.clone());
-			self.exec_root = Some(root);
-			()
-		})
+	pub	fn maybe_change_source_root(&mut self, file_path: &PathBuf) -> Result<(), String> {
+		if self.source_root.is_none() || self.workspace_root.is_none() {
+			Err(format!("Trying to change root to {:?}, but Bazel is not initialized!", file_path))
+		} else {
+			let exec_root = self.exec_root.as_ref().unwrap();
+			let workspace_root = self.workspace_root.as_ref().unwrap();
+			if file_path.starts_with(&exec_root) {
+				let ancestors = file_path.ancestors();
+				let mut new_root = None;
+				for ancestor in ancestors.take_while(|anc| anc != exec_root) {
+					new_root = Some(ancestor);
+				}
+				self.source_root = new_root.map(|nr| PathBuf::from(nr));
+			// }
+			// if file_path.ancestors().find(|anc| anc == &exec_root).is_some() {
+			// 	self.source_root = self.exec_root.clone();
+			} else if file_path.ancestors().find(|anc| anc == &workspace_root).is_some() {
+				self.source_root = self.workspace_root.clone();
+			}
+			Ok(())
+		}
 	}
 
 	pub fn update_workspace(&mut self, workspace: &PathBuf) -> Result<(), String> {
-		self.call_bazel(vec!["sync".to_string()], workspace)?;
-		self.update_exec_root(workspace)
+		// self.call_bazel(vec!["sync".to_string()], workspace)?;
+		self.get_exec_root(workspace).map(|root| {
+			self.source_root = Some(workspace.clone());
+			self.workspace_root = self.source_root.clone();
+			self.exec_root = Some(root);
+			()
+		})
 	}
 
 	fn get_exec_root(&self, source_root: &PathBuf) -> Result<PathBuf, String> {
@@ -118,6 +140,7 @@ impl InnerBazel {
 					Ok(res)
 				} else {
 					let err = format!("Resolved file {:?} from {}, but file doesn't exist!", res, path);
+					// panic!(err);
 					Err(err)
 				}
 			})

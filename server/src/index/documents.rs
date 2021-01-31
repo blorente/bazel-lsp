@@ -18,6 +18,11 @@ pub struct Documents {
 }
 
 impl Documents {
+	pub fn list_docs(&self) -> Vec<PathBuf> {
+		let docs = &*self.docs.read().expect("Failed to lock");
+		docs.keys().map(|e|e.clone()).collect::<Vec<_>>()
+	}
+
 	pub fn refresh_doc(&self, doc: &PathBuf, bazel: &Bazel) {
 		self.index_document(doc, bazel)
 			.expect(&format!("Trouble refreshing doc {:?}", doc));
