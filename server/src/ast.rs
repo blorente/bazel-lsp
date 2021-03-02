@@ -164,12 +164,32 @@ mod test {
 	use super::*;
 	use crate::bazel::Bazel;
 
+	use trim_margin::MarginTrimmable;
 	use rustpython_parser::ast;
+
 	fn run_parse(file: &str) -> (IndexedDocument, Vec<PathBuf>) {
 		let mock_bazel = Bazel::new();
 		let parse_result = super::process_document(file, &mock_bazel);
 		assert!(parse_result.is_ok(), "Failed to parse file:\n {}", file);
 		parse_result.unwrap()
+	}
+
+	fn trimmed(s: &str) -> String {
+	    let res = s.trim_margin();
+		assert!(res.is_some(), "Failed to trim margin from: \n {}", s);
+		res.unwrap()
+	}
+
+	fn location(line: usize, col: usize) -> ast::Location {
+		ast::Location::new(line + 1, col + 1)
+	}
+
+	fn declaration_in_file(name: &str, location: ast::Location) -> FunctionDecl	{
+		FunctionDecl::declared_in_file(&name.to_string(), location)
+	}
+
+	fn call(name: &str, location: ast::Location) -> FunctionCall {
+		FunctionCall::from_identifier(&name.to_string(), location)
 	}
 
 	#[test]
@@ -179,11 +199,36 @@ mod test {
 
 		let expected_indexed_document = IndexedDocument::finished(
 			hashmap! {
-			  "a".to_string() => FunctionDecl::declared_in_file(&"a".to_string(), ast::Location::new(1, 1))
+			  "a".to_string() => declaration_in_file("a", location(0, 0))
 			},
 			vec![],
 		);
 		assert_eq!(indexed_document, expected_indexed_document);
+		assert!(paths_to_load.is_empty());
+	}
+	
+	// This test fails for now because we don't correctly parse symbols inside functions, such as `a` and `b`.
+	#[test]
+	fn test_function_declaration() {
+		let file = trimmed("
+        |def func(a, b):
+	    |  a + b
+        |func()
+		");
+		let (indexed_document, paths_to_load) = run_parse(&file);
+
+		let expected_indexed_document = IndexedDocument::finished(
+			hashmap! {
+			  "func".to_string() => declaration_in_file("func", location(0, 4))
+			},
+			vec![
+				call("func", location(2, 0)),
+				call("a", location(1, 2)),
+				call("b", location(1, 6)),
+			],
+		);
+		assert_eq!(indexed_document.declarations, expected_indexed_document.declarations);
+		assert_eq!(indexed_document.calls, expected_indexed_document.calls);
 		assert!(paths_to_load.is_empty());
 	}
 }

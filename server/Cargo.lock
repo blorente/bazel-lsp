@@ -1179,6 +1179,7 @@ dependencies = [
  "starlark",
  "tokio",
  "tower-lsp",
+ "trim-margin",
 ]
 
 [[package]]
@@ -1440,6 +1441,12 @@ name = "tower-service"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e987b6bf443f4b5b3b6f38704195592cca41c5bb7aedd3c3693c7081f8289860"
+
+[[package]]
+name = "trim-margin"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48117cceb8c7e70f435a873d11a2084ef79cd9e6e68ff66a2f27bb268bc0832b"
 
 [[package]]
 name = "typenum"
