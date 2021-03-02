@@ -11,6 +11,8 @@ use index::Documents;
 mod bazel;
 use bazel::Bazel;
 
+#[macro_use] extern crate maplit;
+
 #[derive(Debug)]
 struct Backend {
     client: Client,

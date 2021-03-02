@@ -2,12 +2,11 @@
 use tower_lsp::lsp_types as lsp;
 use rustpython_parser::ast;
 
-
 fn ast_location_to_lsp_position(location: ast::Location) -> lsp::Position {
 	// Lsp positions are 0-based, whereas parser positions are 1-based,
 	lsp::Position::new(location.row() as u64 - 1, location.column() as u64 - 1)
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Range {
 	start: lsp::Position,
 	end: lsp::Position,

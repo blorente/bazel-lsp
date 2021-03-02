@@ -5,19 +5,23 @@ use tower_lsp::lsp_types as lsp;
 use crate::index::function_decl::FunctionDecl;
 use crate::index::function_call::FunctionCall;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct IndexedDocument {
 	pub declarations: HashMap<String, FunctionDecl>,
 	pub calls: Vec<FunctionCall>,
-	path: PathBuf,
 }
 
 impl IndexedDocument {
-	pub fn new(path: &PathBuf) -> Self {
+	pub fn new() -> Self {
 		IndexedDocument {
-			path: path.clone(),
 			declarations: HashMap::default(),
 			calls: Vec::default(),
+		}
+	}
+
+    pub fn finished(declarations: HashMap<String, FunctionDecl>, calls: Vec<FunctionCall>) -> Self {
+		IndexedDocument {
+			declarations, calls
 		}
 	}
 

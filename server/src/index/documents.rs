@@ -46,7 +46,8 @@ impl Documents {
 		path: &PathBuf,
 		bazel: &Bazel,
 	) -> Result<(), String> {
-		let (indexed_doc, docs_to_load) = process_document(path, bazel)?;
+		let contents = std::fs::read_to_string(path).map_err(|err| format!("Error reading {:?}: {:?}", path, &err))?;
+		let (indexed_doc, docs_to_load) = process_document(&contents, bazel)?;
 		index.insert(path.clone(), Arc::new(indexed_doc));
 		for doc in docs_to_load {
 			// We unconditionally update the current document,
@@ -54,8 +55,8 @@ impl Documents {
 			//
 			// If they had, we'd have updated them on did_change.
 			if !index.contains_key(&doc) {
-				// Documents::index_document_inner(index, &doc, bazel)?;
-				let (indexed_doc, _) = process_document(&doc, bazel)?;
+		        let contents = std::fs::read_to_string(path).map_err(|err| format!("Error reading {:?}: {:?}", path, &err))?;
+				let (indexed_doc, _) = process_document(&contents, bazel)?;
 				index.insert(doc.clone(), Arc::new(indexed_doc));
 			}
 		}

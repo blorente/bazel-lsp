@@ -1,27 +1,22 @@
 use rustpython_parser::ast;
+use rustpython_parser::error;
 use rustpython_parser::parser;
 use std::collections::HashMap;
 use std::fs::read_to_string;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::bazel::Bazel;
 use crate::index::function_call::FunctionCall;
 use crate::index::function_decl::FunctionDecl;
 use crate::index::indexed_document::IndexedDocument;
 
-pub fn parse(file: &PathBuf) -> Result<ast::Program, String> {
-	let content: String = read_to_string(file)
-		.map_err(|err| format!("Error reading file {:?} to string: {:?}", &file, err))?;
-	parser::parse_program(&content)
-		.map_err(|err| format!("Error parsing file {:?}: {:?}", &file, err))
-}
-
 pub fn process_document(
-	path: &PathBuf,
+	contents: &str,
 	bazel: &Bazel,
 ) -> Result<(IndexedDocument, Vec<PathBuf>), String> {
-	let ast = parse(path)?;
-	let mut indexed_document = IndexedDocument::new(path);
+	let ast = parser::parse_program(contents)
+		.map_err(|err| format!("Failed to parse program: {:?}", err))?;
+	let mut indexed_document = IndexedDocument::new();
 	let docs_to_load = process_suite(&mut indexed_document, &ast.statements, bazel)?;
 	Ok((indexed_document, docs_to_load))
 }
@@ -66,7 +61,7 @@ fn process_statement(
 					}
 					_ => {}
 				};
-			};
+			}
 			process_rhs_expression(value, index, bazel)
 		}
 		ast::StatementType::Expression { expression } => {
@@ -82,12 +77,12 @@ fn process_rhs_expression(
 	bazel: &Bazel,
 ) -> Result<Vec<PathBuf>, String> {
 	match &expression.node {
-		ast::ExpressionType::Identifier {
-			name, ..
-		} => {
-			index.calls.push(FunctionCall::from_identifier(&name, expression.location));
+		ast::ExpressionType::Identifier { name, .. } => {
+			index
+				.calls
+				.push(FunctionCall::from_identifier(&name, expression.location));
 			Ok(vec![])
-		},
+		}
 		ast::ExpressionType::Call {
 			function,
 			args,
@@ -161,5 +156,34 @@ fn process_load(
 		// However, given that we're not going to be able to goto definiton,
 		// no sense in returning any declarations.
 		Ok(vec![])
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+	use crate::bazel::Bazel;
+
+	use rustpython_parser::ast;
+	fn run_parse(file: &str) -> (IndexedDocument, Vec<PathBuf>) {
+		let mock_bazel = Bazel::new();
+		let parse_result = super::process_document(file, &mock_bazel);
+		assert!(parse_result.is_ok(), "Failed to parse file:\n {}", file);
+		parse_result.unwrap()
+	}
+
+	#[test]
+	fn test_single_assignment() {
+		let file = "a = 3";
+		let (indexed_document, paths_to_load) = run_parse(&file);
+
+		let expected_indexed_document = IndexedDocument::finished(
+			hashmap! {
+			  "a".to_string() => FunctionDecl::declared_in_file(&"a".to_string(), ast::Location::new(1, 1))
+			},
+			vec![],
+		);
+		assert_eq!(indexed_document, expected_indexed_document);
+		assert!(paths_to_load.is_empty());
 	}
 }
