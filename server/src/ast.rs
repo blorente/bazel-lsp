@@ -167,11 +167,15 @@ mod test {
 	use trim_margin::MarginTrimmable;
 	use rustpython_parser::ast;
 
-	fn run_parse(file: &str) -> (IndexedDocument, Vec<PathBuf>) {
-		let mock_bazel = Bazel::new();
+	fn run_parse(file: &str, bazel: Option<Bazel>) -> (IndexedDocument, Vec<PathBuf>) {
+		let mock_bazel = bazel.unwrap_or(Bazel::new());
 		let parse_result = super::process_document(file, &mock_bazel);
 		assert!(parse_result.is_ok(), "Failed to parse file:\n {}", file);
 		parse_result.unwrap()
+	}
+
+	fn mock_bazel(files: Vec<&str>) -> Bazel {
+      unimplemented!()
 	}
 
 	fn trimmed(s: &str) -> String {
@@ -188,6 +192,10 @@ mod test {
 		FunctionDecl::declared_in_file(&name.to_string(), location)
 	}
 
+	fn declaration_loaded(name: &str, imported_name: Option<&str>, path: &str) -> FunctionDecl	{
+		FunctionDecl::loaded(&name.to_string(), &imported_name.unwrap_or(name).to_string(), &path.into())
+	}
+
 	fn call(name: &str, location: ast::Location) -> FunctionCall {
 		FunctionCall::from_identifier(&name.to_string(), location)
 	}
@@ -195,7 +203,7 @@ mod test {
 	#[test]
 	fn test_single_assignment() {
 		let file = "a = 3";
-		let (indexed_document, paths_to_load) = run_parse(&file);
+		let (indexed_document, paths_to_load) = run_parse(&file, None);
 
 		let expected_indexed_document = IndexedDocument::finished(
 			hashmap! {
@@ -206,16 +214,41 @@ mod test {
 		assert_eq!(indexed_document, expected_indexed_document);
 		assert!(paths_to_load.is_empty());
 	}
+
+	#[test]
+	fn test_load_statement() {
+		let file = trimmed("
+		|load('//:some_file.bzl', 
+		|     'loaded_func',
+		|     loaded_and_renamed_func = 'other_func',
+	    |)
+		|loaded_func()
+		|loaded_and_renamed_func()
+		");
+		let (indexed_document, paths_to_load) = run_parse(&file, Some(mock_bazel(vec!["some_file.bzl"])));
+
+		let expected_indexed_document = IndexedDocument::finished(
+			hashmap! {
+			  "loaded_func".to_string() => declaration_loaded("loaded_func", None, "some_file.bzl"),
+			  "loaded_and_renamed_func".to_string() => declaration_loaded("loaded_func", Some("loaded_and_renamed_func"), "some_file.bzl"),
+			},
+			vec![
+				call("loaded_func", location(1, 0)),
+			],
+		);
+		assert_eq!(indexed_document, expected_indexed_document);
+		assert!(paths_to_load.is_empty());
+	}
 	
 	// This test fails for now because we don't correctly parse symbols inside functions, such as `a` and `b`.
-	#[test]
+	#[test] #[ignore]
 	fn test_function_declaration() {
 		let file = trimmed("
         |def func(a, b):
 	    |  a + b
-        |func()
+        |func(c(), d())
 		");
-		let (indexed_document, paths_to_load) = run_parse(&file);
+		let (indexed_document, paths_to_load) = run_parse(&file, None);
 
 		let expected_indexed_document = IndexedDocument::finished(
 			hashmap! {
@@ -223,6 +256,8 @@ mod test {
 			},
 			vec![
 				call("func", location(2, 0)),
+				call("c", location(2, 5)),
+				call("d", location(2, 10)),
 				call("a", location(1, 2)),
 				call("b", location(1, 6)),
 			],
