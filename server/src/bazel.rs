@@ -77,7 +77,6 @@ impl InnerBazel {
 	}
 
 	pub fn update_workspace(&mut self, workspace: &PathBuf) -> Result<(), String> {
-		// self.call_bazel(vec!["sync".to_string()], workspace)?;
 		self.get_exec_root(workspace).map(|root| {
 			self.source_root = Some(workspace.clone());
 			self.workspace_root = self.source_root.clone();
@@ -97,7 +96,7 @@ impl InnerBazel {
 	}
 
 	fn call_bazel(&self, command: Vec<String>, cwd: &PathBuf) -> Result<String, String> {
-		std::process::Command::new("bazelisk")
+		std::process::Command::new("/usr/local/bin/bazelisk")
 			.args(&command)
 			.current_dir(cwd)
 			.output()
@@ -140,7 +139,6 @@ impl InnerBazel {
 					Ok(res)
 				} else {
 					let err = format!("Resolved file {:?} from {}, but file doesn't exist!", res, path);
-					// panic!(err);
 					Err(err)
 				}
 			})

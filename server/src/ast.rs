@@ -166,16 +166,34 @@ mod test {
 
 	use trim_margin::MarginTrimmable;
 	use rustpython_parser::ast;
+    use tempfile;
 
-	fn run_parse(file: &str, bazel: Option<Bazel>) -> (IndexedDocument, Vec<PathBuf>) {
-		let mock_bazel = bazel.unwrap_or(Bazel::new());
-		let parse_result = super::process_document(file, &mock_bazel);
-		assert!(parse_result.is_ok(), "Failed to parse file:\n {}", file);
-		parse_result.unwrap()
+	use std::io::{self, Write};
+
+	fn create_workspace(contents: HashMap<&str, &str>) -> Result<PathBuf, std::io::Error> {
+		let root = tempfile::tempdir()?;
+		let mut contents = contents;
+		if !contents.contains_key("WORKSPACE") {
+			contents.insert("WORKSPACE", "");
+		}
+		for (filepath, content) in contents {
+            let path = root.path().join(filepath);
+			let mut file = std::fs::File::create(path)?;
+			write!(file, "{}", content)?;
+		}
+		Ok(PathBuf::from(root.path()))
 	}
 
-	fn mock_bazel(files: Vec<&str>) -> Bazel {
-      unimplemented!()
+	fn run_parse(file: &str, files_in_workspace: HashMap<&str, &str>) -> (IndexedDocument, Vec<PathBuf>) {
+		let repo_root = create_workspace(files_in_workspace);
+		assert!(repo_root.is_ok(), "Failed to create repo root:\n {:?}", repo_root);
+		let bazel = Bazel::new();
+	    let bazel_res = bazel.update_workspace(&repo_root.unwrap());
+		assert!(bazel_res.is_ok(), "Failed to update bazel repository!:\n {:?}", bazel_res);
+		println!("Bazel is: {:?}", bazel);
+		let parse_result = super::process_document(file, &bazel);
+		assert!(parse_result.is_ok(), "Failed to parse file:\n {}", file);
+		parse_result.unwrap()
 	}
 
 	fn trimmed(s: &str) -> String {
@@ -203,7 +221,7 @@ mod test {
 	#[test]
 	fn test_single_assignment() {
 		let file = "a = 3";
-		let (indexed_document, paths_to_load) = run_parse(&file, None);
+		let (indexed_document, paths_to_load) = run_parse(&file, hashmap!{});
 
 		let expected_indexed_document = IndexedDocument::finished(
 			hashmap! {
@@ -225,7 +243,8 @@ mod test {
 		|loaded_func()
 		|loaded_and_renamed_func()
 		");
-		let (indexed_document, paths_to_load) = run_parse(&file, Some(mock_bazel(vec!["some_file.bzl"])));
+		//let (indexed_document, paths_to_load) = run_parse(&file, Some(mock_bazel(vec!["some_file.bzl"], vec![])));
+		let (indexed_document, paths_to_load) = run_parse(&file, hashmap!{"some_file.bzl" => ""});
 
 		let expected_indexed_document = IndexedDocument::finished(
 			hashmap! {
@@ -236,7 +255,8 @@ mod test {
 				call("loaded_func", location(1, 0)),
 			],
 		);
-		assert_eq!(indexed_document, expected_indexed_document);
+		assert_eq!(indexed_document.declarations, expected_indexed_document.declarations);
+		assert_eq!(indexed_document.calls, expected_indexed_document.calls);
 		assert!(paths_to_load.is_empty());
 	}
 	
@@ -248,7 +268,7 @@ mod test {
 	    |  a + b
         |func(c(), d())
 		");
-		let (indexed_document, paths_to_load) = run_parse(&file, None);
+		let (indexed_document, paths_to_load) = run_parse(&file, hashmap!{});
 
 		let expected_indexed_document = IndexedDocument::finished(
 			hashmap! {
