@@ -5,14 +5,14 @@ use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-use crate::bazel::BazelWorkspace;
+use crate::bazel::BazelResolver;
 use crate::index::function_call::FunctionCall;
 use crate::index::function_decl::FunctionDecl;
 use crate::index::indexed_document::IndexedDocument;
 
 pub fn process_document(
 	contents: &str,
-	bazel: &BazelWorkspace,
+	bazel: &dyn BazelResolver,
 ) -> Result<(IndexedDocument, Vec<PathBuf>), String> {
 	let ast = parser::parse_program(contents)
 		.map_err(|err| format!("Failed to parse program: {:?}", err))?;
@@ -24,7 +24,7 @@ pub fn process_document(
 fn process_suite(
 	index: &mut IndexedDocument,
 	suite: &ast::Suite,
-	bazel: &BazelWorkspace,
+	bazel: &dyn BazelResolver,
 ) -> Result<Vec<PathBuf>, String> {
 	let mut documents_left_to_parse = vec![];
 	for stmt in suite.iter() {
@@ -37,7 +37,7 @@ fn process_suite(
 fn process_statement(
 	index: &mut IndexedDocument,
 	statement: &ast::Statement,
-	bazel: &BazelWorkspace,
+	bazel: &dyn BazelResolver,
 ) -> Result<Vec<PathBuf>, String> {
 	let location = statement.location;
 	match &statement.node {
@@ -74,7 +74,7 @@ fn process_statement(
 fn process_rhs_expression(
 	expression: &ast::Expression,
 	index: &mut IndexedDocument,
-	bazel: &BazelWorkspace,
+	bazel: &dyn BazelResolver,
 ) -> Result<Vec<PathBuf>, String> {
 	match &expression.node {
 		ast::ExpressionType::Identifier { name, .. } => {
@@ -124,7 +124,7 @@ fn process_load(
 	args: &Vec<ast::Expression>,
 	kwargs: &Vec<ast::Keyword>,
 	index: &mut IndexedDocument,
-	bazel: &BazelWorkspace,
+	bazel: &dyn BazelResolver,
 ) -> Result<Vec<PathBuf>, String> {
 	let source = process_string_literal(&args[0]);
 	let maybe_source_as_path = bazel.resolve_bazel_path(&source);
@@ -160,8 +160,7 @@ fn process_load(
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::bazel::BazelWorkspace;
-	use crate::bazel::BazelInfo;
+	use crate::bazel::BazelResolver;
 
 	use trim_margin::MarginTrimmable;
 	use rustpython_parser::ast;
@@ -169,44 +168,32 @@ mod test {
 
 	use std::io::{self, Write};
 
-	#[derive(Default)]
-    struct MockBazelInfo {
-		mock_exec_root: PathBuf,
+    struct MockBazelResolver {
+		files_in_workspace: HashMap<String, String>
 	}
-	impl MockBazelInfo {
-		fn new(root: &PathBuf) -> Self { MockBazelInfo{mock_exec_root: root.clone() }}
-	}
-	impl BazelInfo for MockBazelInfo {
-		fn get_exec_root(&self, source_root: &PathBuf) -> Result<PathBuf, String> {
-           Ok(self.mock_exec_root.clone())           
-		}
-	    fn debug(&self) -> String {
-           format!("MockBazelInfo({:?})", &self.mock_exec_root)
+	impl MockBazelResolver {
+        pub fn new(files_in_workspace: HashMap<&str, &str>) -> Self {
+			MockBazelResolver {
+				files_in_workspace: files_in_workspace.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect::<HashMap<_, _>>()
+			}
 		}
 	}
-
-	// Note we return the tempdir here because otherwise it will be deleted when it goes out of scope.
-	fn with_workspace<F, T: Sized>(contents: HashMap<&str, &str>, mut body: F) -> T where F: FnMut(PathBuf) -> T {
-		let root = tempfile::tempdir().unwrap();
-		for (filepath, content) in contents {
-            let path = root.path().join(filepath);
-			println!("Creating file {:?}", path);
-			let mut file = std::fs::File::create(&path).unwrap();
-			writeln!(file, "{}", content).unwrap();
-			assert!(&path.is_file(), "File is not file!");
-		}
-		body(PathBuf::from(root.path()))
+	impl BazelResolver for MockBazelResolver {
+	    fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String> {
+			let sanitized_path = &self.sanitize_starlark_label(path);
+			if self.files_in_workspace.contains_key(sanitized_path) {
+		        Ok(PathBuf::from(sanitized_path))
+			} else {
+				Err(format!("Path {} not found in repo:\n {:#?}", path, &self.files_in_workspace))
+			}
+	    }
 	}
 
 	fn run_parse(file: &str, files_in_workspace: HashMap<&str, &str>) -> (IndexedDocument, Vec<PathBuf>) {
-		with_workspace(files_in_workspace, |repo_root| {
-			let bazel = BazelWorkspace::with_bazel_info(Box::new(MockBazelInfo::new(&repo_root)));
-			let bazel_res = bazel.update_workspace(&repo_root);
-			assert!(bazel_res.is_ok(), "Failed to update bazel repository!:\n {:?}", bazel_res);
-			let parse_result = super::process_document(file, &bazel);
+			let bazel_resolver = MockBazelResolver::new(files_in_workspace);
+			let parse_result = super::process_document(file, &bazel_resolver);
 			assert!(parse_result.is_ok(), "Failed to parse file:\n {} \n {:?}", file, parse_result);
 			parse_result.unwrap()
-		})
 	}
 
 	fn trimmed(s: &str) -> String {
@@ -254,23 +241,24 @@ mod test {
 		|     loaded_and_renamed_func = 'other_func',
 	    |)
 		|loaded_func()
-		|loaded_and_renamed_func()
+		|loaded_and_renamed_func(3, 4)
 		");
-		//let (indexed_document, paths_to_load) = run_parse(&file, Some(mock_bazel(vec!["some_file.bzl"], vec![])));
 		let (indexed_document, paths_to_load) = run_parse(&file, hashmap!{"some_file.bzl" => ""});
 
 		let expected_indexed_document = IndexedDocument::finished(
 			hashmap! {
 			  "loaded_func".to_string() => declaration_loaded("loaded_func", None, "some_file.bzl"),
-			  "loaded_and_renamed_func".to_string() => declaration_loaded("loaded_func", Some("loaded_and_renamed_func"), "some_file.bzl"),
+			  "loaded_and_renamed_func".to_string() => declaration_loaded("other_func", Some("loaded_and_renamed_func"), "some_file.bzl"),
 			},
 			vec![
-				call("loaded_func", location(1, 0)),
+				call("loaded_func", location(4, 0)),
+				call("loaded_and_renamed_func", location(5, 0)),
 			],
 		);
 		assert_eq!(indexed_document.declarations, expected_indexed_document.declarations);
 		assert_eq!(indexed_document.calls, expected_indexed_document.calls);
-		assert!(paths_to_load.is_empty());
+		let expected_paths_to_load = vec![PathBuf::from("some_file.bzl")];
+		assert_eq!(paths_to_load, expected_paths_to_load);
 	}
 	
 	// This test fails for now because we don't correctly parse symbols inside functions, such as `a` and `b`.

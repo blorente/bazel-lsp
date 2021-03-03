@@ -2,16 +2,6 @@ use std::path::PathBuf;
 
 use std::sync::{Arc, Mutex};
 
-pub trait BazelInfo {
-	fn get_exec_root(&self, source_root: &PathBuf) -> Result<PathBuf, String>;
-	fn debug(&self) -> String;
-}
-impl std::fmt::Debug for dyn BazelInfo + Send + Sync {
-	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "BazelInfo({})", self.debug())
-    }
-}
-
 #[derive(Debug, Default, Clone)]
 struct BazelExecutable {
   executable: PathBuf,
@@ -33,8 +23,7 @@ impl BazelExecutable {
 			})
 			.map(|out| out.trim().to_string())
 	}
-}
-impl BazelInfo for BazelExecutable {
+
     fn get_exec_root(&self, source_root: &PathBuf) -> Result<PathBuf, String> {
 		let execroot: String = self.call_bazel(
 			vec!["info".to_string(), "execution_root".to_string()],
@@ -44,9 +33,22 @@ impl BazelInfo for BazelExecutable {
 			execroot.replace("execroot/__main__", "external"),
 		))
 	}
+}
 
-	fn debug(&self) -> String {
-		format!("{:?}", self)
+pub trait BazelResolver {
+	fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String>;
+	fn sanitize_starlark_label(&self, label: &String) -> String {
+		let label = label
+			.trim()
+			.replace("@", "")
+			.replace("//:", "/")
+			.replace("//", "/")
+			.replace(":", "/");
+		if label.starts_with("/") {
+			label.strip_prefix("/").unwrap().to_string()
+		} else {
+			label
+		}
 	}
 }
 
@@ -59,12 +61,6 @@ impl BazelWorkspace {
 	pub fn new() -> Self {
 		BazelWorkspace {
 			inner: Arc::new(Mutex::new(InnerBazel::new())),
-		}
-	}
-
-	pub fn with_bazel_info(bazel_info: Box<dyn BazelInfo + Send + Sync>) -> Self {
-		BazelWorkspace {
-			inner: Arc::new(Mutex::new(InnerBazel::with_bazel_info(bazel_info))),
 		}
 	}
 
@@ -82,7 +78,10 @@ impl BazelWorkspace {
 			.map_err(|err| format!("Error locking Bazel {:?}", err))?;
 		inner.update_workspace(workspace)
 	}
-	pub fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String> {
+}
+
+impl BazelResolver for BazelWorkspace { 
+	fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String> {
 		let inner = &*self
 			.inner
 			.lock()
@@ -96,7 +95,7 @@ struct InnerBazel {
 	exec_root: Option<PathBuf>,
 	workspace_root: Option<PathBuf>,
 	source_root: Option<PathBuf>, // Where to resolve "//:" references against
-	bazel_info: Box<dyn BazelInfo + Send + Sync>,
+	bazel_exe: BazelExecutable,
 }
 
 impl InnerBazel {
@@ -105,16 +104,7 @@ impl InnerBazel {
 			exec_root: None,
 			workspace_root: None,
 			source_root: None,
-			bazel_info: Box::new(BazelExecutable::new("bazelisk")),
-		}
-	}
-
-	pub fn with_bazel_info(bazel_info: Box<dyn BazelInfo + Send + Sync>) -> Self {
-		InnerBazel {
-			exec_root: None,
-			workspace_root: None,
-			source_root: None,
-			bazel_info: bazel_info,
+			bazel_exe: BazelExecutable::new("bazelisk"),
 		}
 	}
 
@@ -142,29 +132,17 @@ impl InnerBazel {
 	}
 
 	pub fn update_workspace(&mut self, workspace: &PathBuf) -> Result<(), String> {
-		self.bazel_info.get_exec_root(workspace).map(|root| {
+		self.bazel_exe.get_exec_root(workspace).map(|root| {
 			self.source_root = Some(workspace.clone());
 			self.workspace_root = self.source_root.clone();
 			self.exec_root = Some(root);
 			()
 		})
 	}
+}
 
-	fn sanitize_starlark_label(&self, label: &String) -> String {
-		let label = label
-			.trim()
-			.replace("@", "")
-			.replace("//:", "/")
-			.replace("//", "/")
-			.replace(":", "/");
-		if label.starts_with("/") {
-			label.strip_prefix("/").unwrap().to_string()
-		} else {
-			label
-		}
-	}
-
-	pub fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String> {
+impl BazelResolver for InnerBazel {
+	fn resolve_bazel_path(&self, path: &String) -> Result<PathBuf, String> {
 		let resolved_path = self.sanitize_starlark_label(path);
 		let maybe_root = if path.starts_with("//") {
 			self.source_root.as_ref()
