@@ -5,14 +5,14 @@ use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-use crate::bazel::Bazel;
+use crate::bazel::BazelWorkspace;
 use crate::index::function_call::FunctionCall;
 use crate::index::function_decl::FunctionDecl;
 use crate::index::indexed_document::IndexedDocument;
 
 pub fn process_document(
 	contents: &str,
-	bazel: &Bazel,
+	bazel: &BazelWorkspace,
 ) -> Result<(IndexedDocument, Vec<PathBuf>), String> {
 	let ast = parser::parse_program(contents)
 		.map_err(|err| format!("Failed to parse program: {:?}", err))?;
@@ -24,7 +24,7 @@ pub fn process_document(
 fn process_suite(
 	index: &mut IndexedDocument,
 	suite: &ast::Suite,
-	bazel: &Bazel,
+	bazel: &BazelWorkspace,
 ) -> Result<Vec<PathBuf>, String> {
 	let mut documents_left_to_parse = vec![];
 	for stmt in suite.iter() {
@@ -37,7 +37,7 @@ fn process_suite(
 fn process_statement(
 	index: &mut IndexedDocument,
 	statement: &ast::Statement,
-	bazel: &Bazel,
+	bazel: &BazelWorkspace,
 ) -> Result<Vec<PathBuf>, String> {
 	let location = statement.location;
 	match &statement.node {
@@ -74,7 +74,7 @@ fn process_statement(
 fn process_rhs_expression(
 	expression: &ast::Expression,
 	index: &mut IndexedDocument,
-	bazel: &Bazel,
+	bazel: &BazelWorkspace,
 ) -> Result<Vec<PathBuf>, String> {
 	match &expression.node {
 		ast::ExpressionType::Identifier { name, .. } => {
@@ -124,45 +124,44 @@ fn process_load(
 	args: &Vec<ast::Expression>,
 	kwargs: &Vec<ast::Keyword>,
 	index: &mut IndexedDocument,
-	bazel: &Bazel,
+	bazel: &BazelWorkspace,
 ) -> Result<Vec<PathBuf>, String> {
 	let source = process_string_literal(&args[0]);
 	let maybe_source_as_path = bazel.resolve_bazel_path(&source);
-	if let Ok(source_as_path) = maybe_source_as_path {
-		let mut declarations = HashMap::new();
-		for arg in &args[1..args.len()] {
-			let name = process_string_literal(&arg);
-			declarations.insert(
-				name.clone(),
-				FunctionDecl::loaded(&name, &name, &source_as_path),
-			);
+	match maybe_source_as_path {
+		Ok(source_as_path) => {
+			let mut declarations = HashMap::new();
+			for arg in &args[1..args.len()] {
+				let name = process_string_literal(&arg);
+				declarations.insert(
+					name.clone(),
+					FunctionDecl::loaded(&name, &name, &source_as_path),
+				);
+			}
+			for kwarg in kwargs {
+				let imported_name = kwarg
+					.name
+					.as_ref()
+					.cloned()
+					.ok_or_else(|| "Kwarg without a name")?;
+				let real_name = process_string_literal(&kwarg.value);
+				declarations.insert(
+					imported_name.clone(),
+					FunctionDecl::loaded(&real_name, &imported_name, &source_as_path),
+				);
+			}
+			index.declarations.extend(declarations);
+			Ok(vec![source_as_path])
 		}
-		for kwarg in kwargs {
-			let imported_name = kwarg
-				.name
-				.as_ref()
-				.cloned()
-				.ok_or_else(|| "Kwarg without a name")?;
-			let real_name = process_string_literal(&kwarg.value);
-			declarations.insert(
-				imported_name.clone(),
-				FunctionDecl::loaded(&real_name, &imported_name, &source_as_path),
-			);
-		}
-		index.declarations.extend(declarations);
-		Ok(vec![source_as_path])
-	} else {
-		// For now, we don't want to error when we find a file we cannot load.
-		// However, given that we're not going to be able to goto definiton,
-		// no sense in returning any declarations.
-		Ok(vec![])
+		Err(s) => Err(s)
 	}
 }
 
 #[cfg(test)]
 mod test {
 	use super::*;
-	use crate::bazel::Bazel;
+	use crate::bazel::BazelWorkspace;
+	use crate::bazel::BazelInfo;
 
 	use trim_margin::MarginTrimmable;
 	use rustpython_parser::ast;
@@ -170,30 +169,44 @@ mod test {
 
 	use std::io::{self, Write};
 
-	fn create_workspace(contents: HashMap<&str, &str>) -> Result<PathBuf, std::io::Error> {
-		let root = tempfile::tempdir()?;
-		let mut contents = contents;
-		if !contents.contains_key("WORKSPACE") {
-			contents.insert("WORKSPACE", "");
+	#[derive(Default)]
+    struct MockBazelInfo {
+		mock_exec_root: PathBuf,
+	}
+	impl MockBazelInfo {
+		fn new(root: &PathBuf) -> Self { MockBazelInfo{mock_exec_root: root.clone() }}
+	}
+	impl BazelInfo for MockBazelInfo {
+		fn get_exec_root(&self, source_root: &PathBuf) -> Result<PathBuf, String> {
+           Ok(self.mock_exec_root.clone())           
 		}
+	    fn debug(&self) -> String {
+           format!("MockBazelInfo({:?})", &self.mock_exec_root)
+		}
+	}
+
+	// Note we return the tempdir here because otherwise it will be deleted when it goes out of scope.
+	fn with_workspace<F, T: Sized>(contents: HashMap<&str, &str>, mut body: F) -> T where F: FnMut(PathBuf) -> T {
+		let root = tempfile::tempdir().unwrap();
 		for (filepath, content) in contents {
             let path = root.path().join(filepath);
-			let mut file = std::fs::File::create(path)?;
-			write!(file, "{}", content)?;
+			println!("Creating file {:?}", path);
+			let mut file = std::fs::File::create(&path).unwrap();
+			writeln!(file, "{}", content).unwrap();
+			assert!(&path.is_file(), "File is not file!");
 		}
-		Ok(PathBuf::from(root.path()))
+		body(PathBuf::from(root.path()))
 	}
 
 	fn run_parse(file: &str, files_in_workspace: HashMap<&str, &str>) -> (IndexedDocument, Vec<PathBuf>) {
-		let repo_root = create_workspace(files_in_workspace);
-		assert!(repo_root.is_ok(), "Failed to create repo root:\n {:?}", repo_root);
-		let bazel = Bazel::new();
-	    let bazel_res = bazel.update_workspace(&repo_root.unwrap());
-		assert!(bazel_res.is_ok(), "Failed to update bazel repository!:\n {:?}", bazel_res);
-		println!("Bazel is: {:?}", bazel);
-		let parse_result = super::process_document(file, &bazel);
-		assert!(parse_result.is_ok(), "Failed to parse file:\n {}", file);
-		parse_result.unwrap()
+		with_workspace(files_in_workspace, |repo_root| {
+			let bazel = BazelWorkspace::with_bazel_info(Box::new(MockBazelInfo::new(&repo_root)));
+			let bazel_res = bazel.update_workspace(&repo_root);
+			assert!(bazel_res.is_ok(), "Failed to update bazel repository!:\n {:?}", bazel_res);
+			let parse_result = super::process_document(file, &bazel);
+			assert!(parse_result.is_ok(), "Failed to parse file:\n {} \n {:?}", file, parse_result);
+			parse_result.unwrap()
+		})
 	}
 
 	fn trimmed(s: &str) -> String {

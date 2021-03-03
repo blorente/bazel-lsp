@@ -9,7 +9,7 @@ mod index;
 use index::Documents;
 
 mod bazel;
-use bazel::Bazel;
+use bazel::BazelWorkspace;
 
 #[macro_use] extern crate maplit;
 
@@ -17,7 +17,7 @@ use bazel::Bazel;
 struct Backend {
     client: Client,
     documents: Documents,
-    bazel: Bazel,
+    bazel: BazelWorkspace,
 }
 
 impl Backend {
@@ -25,7 +25,7 @@ impl Backend {
         Backend {
             client,
             documents: Documents::default(),
-            bazel: Bazel::new(),
+            bazel: BazelWorkspace::new(),
         }
     }
 
