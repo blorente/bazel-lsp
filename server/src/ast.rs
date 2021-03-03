@@ -234,6 +234,29 @@ mod test {
 	}
 
 	#[test]
+	fn test_single_function_declaration() {
+		let file = trimmed("
+		|def hello():
+		|  call_to_other_function()
+		|hello()
+		");
+		let (indexed_document, paths_to_load) = run_parse(&file, hashmap!{});
+
+		let expected_indexed_document = IndexedDocument::finished(
+			hashmap! {
+			    "hello".to_string() => declaration_in_file("hello", location(0, 4))
+			},
+			vec![
+				call("call_to_other_function", location(1, 2)),
+				call("hello", location(2, 0)),
+			],
+		);
+		assert_eq!(indexed_document.declarations, expected_indexed_document.declarations);
+		assert_eq!(indexed_document.calls, expected_indexed_document.calls);
+		assert!(paths_to_load.is_empty());
+	}
+
+	#[test]
 	fn test_load_statement() {
 		let file = trimmed("
 		|load('//:some_file.bzl', 
@@ -253,6 +276,33 @@ mod test {
 			vec![
 				call("loaded_func", location(4, 0)),
 				call("loaded_and_renamed_func", location(5, 0)),
+			],
+		);
+		assert_eq!(indexed_document.declarations, expected_indexed_document.declarations);
+		assert_eq!(indexed_document.calls, expected_indexed_document.calls);
+		let expected_paths_to_load = vec![PathBuf::from("some_file.bzl")];
+		assert_eq!(paths_to_load, expected_paths_to_load);
+	}
+
+	#[test]
+	fn test_call_loaded_function_from_declared_function() {
+		let file = trimmed("
+		|load('//:some_file.bzl', 'loaded_func')
+	    |def defined_func():
+		|  loaded_func()
+		|defined_func()
+		");
+
+		let (indexed_document, paths_to_load) = run_parse(&file, hashmap!{"some_file.bzl" => ""});
+
+		let expected_indexed_document = IndexedDocument::finished(
+			hashmap! {
+			  "loaded_func".to_string() => declaration_loaded("loaded_func", None, "some_file.bzl"),
+			  "defined_func".to_string() => declaration_in_file("defined_func", location(1, 4)),
+			},
+			vec![
+				call("loaded_func", location(2, 2)),
+				call("defined_func", location(3, 0)),
 			],
 		);
 		assert_eq!(indexed_document.declarations, expected_indexed_document.declarations);
