@@ -3,13 +3,13 @@ use rustpython_parser::ast;
 
 use crate::index::range::Range;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CallableSymbolSource {
 	DeclaredInFile(Range),
 	Loaded(PathBuf),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
 	pub imported_name: String,
 	pub real_name: String,

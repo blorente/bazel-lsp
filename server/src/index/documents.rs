@@ -6,7 +6,7 @@ use std::sync::RwLock;
 use crate::ast::process_document;
 use tower_lsp::lsp_types as lsp;
 
-use crate::bazel::Bazel;
+use crate::bazel::BazelWorkspace;
 use crate::index::function_decl::{CallableSymbolSource, FunctionDecl};
 use crate::index::indexed_document::IndexedDocument;
 
@@ -23,7 +23,7 @@ impl Documents {
 		docs.keys().map(|e|e.clone()).collect::<Vec<_>>()
 	}
 
-	pub fn refresh_doc(&self, doc: &PathBuf, bazel: &Bazel) {
+	pub fn refresh_doc(&self, doc: &PathBuf, bazel: &BazelWorkspace) {
 		self.index_document(doc, bazel)
 			.expect(&format!("Trouble refreshing doc {:?}", doc));
 	}
@@ -33,7 +33,7 @@ impl Documents {
 		docs.get(doc).cloned()
 	}
 
-	fn index_document(&self, path: &PathBuf, bazel: &Bazel) -> Result<(), String> {
+	fn index_document(&self, path: &PathBuf, bazel: &BazelWorkspace) -> Result<(), String> {
 		let index = &mut *self
 			.docs
 			.write()
@@ -44,9 +44,10 @@ impl Documents {
 	fn index_document_inner(
 		index: &mut HashMap<PathBuf, Arc<IndexedDocument>>,
 		path: &PathBuf,
-		bazel: &Bazel,
+		bazel: &BazelWorkspace,
 	) -> Result<(), String> {
-		let (indexed_doc, docs_to_load) = process_document(path, bazel)?;
+		let contents = std::fs::read_to_string(path).map_err(|err| format!("Error reading {:?}: {:?}", path, &err))?;
+		let (indexed_doc, docs_to_load) = process_document(&contents, bazel)?;
 		index.insert(path.clone(), Arc::new(indexed_doc));
 		for doc in docs_to_load {
 			// We unconditionally update the current document,
@@ -54,8 +55,8 @@ impl Documents {
 			//
 			// If they had, we'd have updated them on did_change.
 			if !index.contains_key(&doc) {
-				// Documents::index_document_inner(index, &doc, bazel)?;
-				let (indexed_doc, _) = process_document(&doc, bazel)?;
+		        let contents = std::fs::read_to_string(path).map_err(|err| format!("Error reading {:?}: {:?}", path, &err))?;
+				let (indexed_doc, _) = process_document(&contents, bazel)?;
 				index.insert(doc.clone(), Arc::new(indexed_doc));
 			}
 		}

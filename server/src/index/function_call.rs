@@ -3,7 +3,7 @@ use rustpython_parser::ast;
 
 use crate::index::range::Range;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionCall {
 	range: Range,
 	pub function_name: String,
