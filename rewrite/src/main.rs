@@ -4,33 +4,22 @@ use tower_lsp::jsonrpc::{Error, Result};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-mod ast;
-mod index;
-use index::Documents;
+#[macro_use] extern crate maplit;
 
 mod bazel;
-use bazel::BazelWorkspace;
-
-mod rewrite;
-use rewrite::bazel::workspace::{BazelWorkspace, self};
-
-
-#[macro_use] extern crate maplit;
+use bazel::workspace::BazelWorkspace;
 
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    documents: Documents,
-    bazel: BazelWorkspace,
-    new_workspace: rewrite::bazel::workspace::BazelWorkspace,
+    workspace: BazelWorkspace,
 }
 
 impl Backend {
     fn new(client: Client) -> Self {
         Backend {
             client,
-            documents: Documents::default(),
-            bazel: BazelWorkspace::new(),
+            workspace: BazelWorkspace::new(),
         }
     }
 
@@ -52,25 +41,15 @@ impl Backend {
         self.client
             .log_message(MessageType::Log, format!("opened file {:?}", doc))
             .await;
-
-        self.documents.refresh_doc(doc, &self.bazel);
-        self.client
-            .log_message(
-                MessageType::Log,
-                format!("index is now {:#?}", self.documents),
-            )
-            .await;
-    }
-
-    async fn update_bazel(&self, file: &PathBuf) {
-        let res = self.bazel.maybe_change_source_root(&file);
-        if let Err(msg) = res {
-            self.client.log_message(MessageType::Error, msg).await;
-        } else {
-            self.client.log_message(MessageType::Info, format!("Bazel is now {:#?}", &self.bazel)).await;
-        }
+        //self.client
+            //.log_message(
+                //MessageType::Log,
+                //format!("index is now {:#?}", self.documents),
+            //)
+            //.await;
     }
 }
+
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
@@ -81,8 +60,8 @@ impl LanguageServer for Backend {
         params
             .root_uri
             .ok_or_else(|| Error::internal_error())
-            .and_then(|url| url.to_file_path().map_err(|_| Error::internal_error()))
-            .and_then(|path| self.bazel.update_workspace(&path).map_err(|_| Error::internal_error()))?;
+            .and_then(|url| url.to_file_path().map_err(|_| Error::internal_error()))?;
+            //.and_then(|path| self.bazel.update_workspace(&path).map_err(|_| Error::internal_error()))?;
         Ok(InitializeResult {
             capabilities: Backend::capabilities(),
             server_info: None,
@@ -107,7 +86,7 @@ impl LanguageServer for Backend {
             .to_file_path()
             .map_err(|_| Error::internal_error())
             .expect("bad path");
-        self.update_doc(&path).await;
+        //self.update_doc(&path).await;
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
@@ -117,8 +96,8 @@ impl LanguageServer for Backend {
             .to_file_path()
             .map_err(|_| Error::internal_error())
             .expect("bad path");
-        self.update_bazel(&path).await;
-        self.update_doc(&path).await;
+        //self.update_bazel(&path).await;
+        //self.update_doc(&path).await;
     }
 
     async fn goto_definition(
@@ -133,16 +112,17 @@ impl LanguageServer for Backend {
             .to_file_path()
             .map_err(|_| Error::internal_error())?;
         let position = params.text_document_position_params.position;
-        let maybe_location = self.documents.locate_declaration_of_call_at(&path, position);
-        self.client
-            .log_message(
-                MessageType::Info,
-                format!("Goto Location {:#?}", &maybe_location),
-            )
-            .await;
-        if let Some(loc) = &maybe_location {
-            self.update_bazel(&loc.uri.to_file_path().expect("")).await;
-        }
+        //let maybe_location = self.documents.locate_declaration_of_call_at(&path, position);
+        //self.client
+            //.log_message(
+                //MessageType::Info,
+                //format!("Goto Location {:#?}", &maybe_location),
+            //)
+            //.await;
+        //if let Some(loc) = &maybe_location {
+            //self.update_bazel(&loc.uri.to_file_path().expect("")).await;
+        //}
+        let maybe_location = None;
         Ok(maybe_location.map(|loc| {
             GotoDefinitionResponse::Scalar(loc)
         }))
