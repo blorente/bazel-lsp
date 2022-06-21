@@ -10,6 +10,6 @@
 			"args": ["--extensionDevelopmentPath=${workspaceRoot}/lsp-vscode-extension"],
 			"outFiles": ["${workspaceRoot}/lsp-vscode-extension/out/*.js"],
 			"preLaunchTask": "build.sh"
-		},
-	]
+		}
+    ]
 }
