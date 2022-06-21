@@ -9,6 +9,8 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 mod bazel;
 use bazel::workspace::BazelWorkspace;
 
+mod vfs;
+
 #[derive(Debug)]
 struct Backend {
     client: Client,
