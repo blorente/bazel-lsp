@@ -1,27 +1,43 @@
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
 
-use tower_lsp::jsonrpc::{Error, Result};
+use eyre::{Result, eyre};
+use bazel::bazel::BazelExecutable;
+use bazel::workspace::workspace::BazelWorkspace;
+use bazel::workspace::workspaces::BazelWorkspaces;
+use tower_lsp::jsonrpc::{Error, Result as LspResult};
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 #[macro_use] extern crate maplit;
 
 mod bazel;
-use bazel::workspace::BazelWorkspace;
+use vfs::VfsHandle;
 
 mod vfs;
 
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    workspace: BazelWorkspace,
+    vfs: VfsHandle,
+    workspaces: BazelWorkspaces,
+    bazel_exe: BazelExecutable,
+    /// This is a mutex of an option because switching from no current to one current should be
+    /// sync.
+    current_workspace: Mutex<Option<Arc<BazelWorkspace>>>,
 }
 
 impl Backend {
     fn new(client: Client) -> Self {
+        let vfs = VfsHandle::new();
+        let workspaces = BazelWorkspaces::new();
+        let bazel_exe = BazelExecutable::new("/opt/brew/bin/bazel");
         Backend {
             client,
-            workspace: BazelWorkspace::new(),
+            vfs,
+            workspaces,
+            current_workspace: Mutex::new(None),
+            bazel_exe,
         }
     }
 
@@ -39,30 +55,27 @@ impl Backend {
         capabilities
     }
 
-    async fn update_doc(&self, doc: &PathBuf) {
-        self.client
-            .log_message(MessageType::Log, format!("opened file {:?}", doc))
-            .await;
-        //self.client
-            //.log_message(
-                //MessageType::Log,
-                //format!("index is now {:#?}", self.documents),
-            //)
-            //.await;
+    fn switch_workspace(&self, root: &PathBuf) -> eyre::Result<()> {
+        let workspace: Arc<BazelWorkspace> = self.workspaces.get_workspace(&self.bazel_exe, root, self.vfs.clone())?;
+        let mut current = self.current_workspace.lock().map_err(|err| eyre!("Failed to lock current workspace: {}", err))?;
+        *current = Some(workspace);
+        Ok(())
     }
 }
 
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> LspResult<InitializeResult> {
         self.client
             .log_message(MessageType::Info, "initialized!")
             .await;
+        panic!("PLease fail");
         params
             .root_uri
             .ok_or_else(|| Error::internal_error())
-            .and_then(|url| url.to_file_path().map_err(|_| Error::internal_error()))?;
+            .and_then(|url| url.to_file_path().map_err(|_| Error::internal_error()))
+            .map(|path| self.switch_workspace(&path))?;
             //.and_then(|path| self.bazel.update_workspace(&path).map_err(|_| Error::internal_error()))?;
         Ok(InitializeResult {
             capabilities: Backend::capabilities(),
@@ -76,7 +89,7 @@ impl LanguageServer for Backend {
             .await;
     }
 
-    async fn shutdown(&self) -> Result<()> {
+    async fn shutdown(&self) -> LspResult<()> {
         self.client.log_message(MessageType::Info, "goodbye!").await;
         Ok(())
     }
@@ -105,7 +118,7 @@ impl LanguageServer for Backend {
     async fn goto_definition(
         &self,
         params: GotoDefinitionParams,
-    ) -> Result<Option<GotoDefinitionResponse>> {
+    ) -> LspResult<Option<GotoDefinitionResponse>> {
         let uri = params
             .text_document_position_params
             .text_document

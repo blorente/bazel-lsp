@@ -3,6 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use super::bazel::BazelExecutable;
 
+#[derive(Debug)]
 pub(crate) struct BazelInfo {
     repository_cache: PathBuf,
 }
