@@ -10,8 +10,8 @@ pub(crate) struct Vfs {
 }
 
 impl Vfs {
-    pub(crate) fn ingest_file(path: &AbsPath) -> Result<FileId> {
-        Err(eyre!("Vfs.ingest_file not implemented!"))
+    pub(crate) fn ingest(path: &AbsPath) -> Result<FileId> {
+        Err(eyre!("Vfs.ingest not implemented!"))
     }
 
     pub(crate) fn contents(path: FileId) -> Result<FileContent> {
