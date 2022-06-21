@@ -11,6 +11,9 @@ use index::Documents;
 mod bazel;
 use bazel::BazelWorkspace;
 
+mod rewrite;
+use rewrite::bazel::workspace::{BazelWorkspace, self};
+
 #[macro_use] extern crate maplit;
 
 #[derive(Debug)]
@@ -18,6 +21,7 @@ struct Backend {
     client: Client,
     documents: Documents,
     bazel: BazelWorkspace,
+    new_workspace: rewrite::bazel::workspace::BazelWorkspace,
 }
 
 impl Backend {
